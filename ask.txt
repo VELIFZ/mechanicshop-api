@@ -1,1 +1,0 @@
-how can i add linked inventory items in GET /inventory/ response? both only if the item is serialized part
