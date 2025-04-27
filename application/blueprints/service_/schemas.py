@@ -9,6 +9,7 @@ class ServiceSchema(ma.SQLAlchemyAutoSchema):
         load_instance = False # So .load() returns a dict
         
     id = fields.Int(dump_only=True)
+    customer_id = fields.Int()
         
 service_schema = ServiceSchema()
 services_schema = ServiceSchema(many=True) 

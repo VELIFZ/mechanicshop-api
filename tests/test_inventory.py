@@ -1,6 +1,7 @@
 import unittest
 from application import create_app, db
 from application.models import Inventory, SerializedPart
+from application.utils.utils import encode_token
 
 class TestInventory(unittest.TestCase):
     def setUp(self):    
@@ -32,6 +33,10 @@ class TestInventory(unittest.TestCase):
 
         self.serialized_part_id = self.serialized_part.id
         
+        # Prepare auth header
+        self.token = encode_token(1, 'employee')  # dummy employee token
+        self.headers = {"Authorization": f"Bearer {self.token}"}
+        
     def tearDown(self):
         db.session.remove()
         db.drop_all()
@@ -47,7 +52,7 @@ class TestInventory(unittest.TestCase):
             "quantity_in_stock": 50
         }
 
-        response = self.client.post('/inventory/', json=payload)
+        response = self.client.post('/inventory/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 201)
 
         data = response.get_json()
@@ -62,7 +67,7 @@ class TestInventory(unittest.TestCase):
             "price": 15.99,
             "quantity_in_stock": 50
         }   
-        response = self.client.post('/inventory/', json=payload)
+        response = self.client.post('/inventory/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
 
         data = response.get_json()
@@ -78,12 +83,12 @@ class TestInventory(unittest.TestCase):
             "price": "15.99",
             "quantity_in_stock": 50
         }
-        response = self.client.post('/inventory/', json=payload)
+        response = self.client.post('/inventory/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
 
         data = response.get_json()  
-        self.assertIn("errors", data)
-        self.assertIn("inventory_number", data["errors"])
+        self.assertEqual(data["message"], "This inventory number already exists.")
+        self.assertIn("inventory_number", data["details"])
         
     # 4- negative quantity
     def test_create_inventory_negative_quantity(self):
@@ -94,7 +99,7 @@ class TestInventory(unittest.TestCase):
             "price": "15.99",
             "quantity_in_stock": -10
         }
-        response = self.client.post('/inventory/', json=payload)
+        response = self.client.post('/inventory/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
 
         data = response.get_json()
@@ -103,7 +108,7 @@ class TestInventory(unittest.TestCase):
         
     # 5- get all inventory
     def test_get_all_inventory(self):
-        response = self.client.get('/inventory/')
+        response = self.client.get('/inventory/?page=1&limit=10')
         self.assertEqual(response.status_code, 200)
 
         data = response.get_json()
@@ -125,11 +130,11 @@ class TestInventory(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
         data = response.get_json()
-        self.assertEqual(data["error"], "Inventory not found")
+        self.assertEqual(data["message"], "Inventory not found")
         
     # 8- soft delete inventory
     def test_soft_delete_inventory(self):
-        response = self.client.delete(f"/inventory/{self.inventory_id}")
+        response = self.client.delete(f"/inventory/{self.inventory_id}", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
         data = response.get_json()
@@ -150,7 +155,7 @@ class TestInventory(unittest.TestCase):
             "status": "available",
             "inventory_id": self.inventory.id
         }
-        response = self.client.post('/inventory/serialized-parts/', json=payload) 
+        response = self.client.post('/inventory/serialized-parts/', json=payload, headers=self.headers) 
         self.assertEqual(response.status_code, 201)
 
         data = response.get_json()
@@ -165,12 +170,12 @@ class TestInventory(unittest.TestCase):
             "status": "available",
             "inventory_id": self.inventory.id
         }
-        response = self.client.post('/inventory/serialized-parts/', json=payload) 
+        response = self.client.post('/inventory/serialized-parts/', json=payload, headers=self.headers) 
         self.assertEqual(response.status_code, 400)
 
         data = response.get_json()
-        self.assertIn("errors", data)
-        self.assertIn("serial_number", data["errors"])
+        self.assertEqual(data["message"], "This serialized part already exists")
+        self.assertIn("serial_number", data["details"])
         
     # 3- create serialized part with invalid inventory id
     def test_create_serialized_part_with_invalid_inventory_id(self):
@@ -179,12 +184,12 @@ class TestInventory(unittest.TestCase):
             "status": "available",
             "inventory_id": 99        
         }
-        response = self.client.post('/inventory/serialized-parts/', json=payload) 
+        response = self.client.post('/inventory/serialized-parts/', json=payload, headers=self.headers) 
         self.assertEqual(response.status_code, 400)
 
         data = response.get_json()
-        self.assertIn("errors", data)
-        self.assertIn("inventory_id", data["errors"])
+        self.assertEqual(data["message"], "Inventory not found")
+        self.assertIn("inventory_id", data["details"])
         
     # 4- get all serialized parts
     def test_get_all_serialized_parts(self):
@@ -204,14 +209,21 @@ class TestInventory(unittest.TestCase):
         self.assertEqual(data["id"], self.serialized_part_id)
         self.assertEqual(data["serial_number"], self.serialized_part.serial_number)
 
-    # I dont delete - i coudl change their status maybe
     # 6 - patch the status part
     def test_patch_serialized_part_status(self):
         payload = {"status": "used"}
         
-        response = self.client.patch(f'/inventory/serialized-parts/{self.serialized_part_id}', json=payload)
+        response = self.client.patch(f'/inventory/serialized-parts/{self.serialized_part_id}', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 200)
         
         data = response.get_json()
         self.assertEqual(data["status"], "used")
-        self.assertEqual(data["id"], self.serialized_part_id)        
+        self.assertEqual(data["id"], self.serialized_part_id)       
+        
+    # 7- Soft delete serialized part
+    def test_soft_delete_serialized_part(self):
+        response = self.client.delete(f"/inventory/serialized-parts/{self.serialized_part_id}", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+
+        follow_up = self.client.get(f"/inventory/serialized-parts/{self.serialized_part_id}")
+        self.assertEqual(follow_up.status_code, 404) 

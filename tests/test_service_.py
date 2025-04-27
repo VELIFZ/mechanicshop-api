@@ -1,6 +1,7 @@
 import unittest
 from application import create_app
 from application.models import db, Service
+from application.utils.utils import encode_token
 
 # A test class that inherits from unittest.TestCase. -> gives access to all the test features like assertEqual().
 class TestService(unittest.TestCase):
@@ -16,6 +17,10 @@ class TestService(unittest.TestCase):
             db.session.add(self.service)
             db.session.commit()
             self.service_id = self.service.id
+            
+            # Create token and auth headers
+            self.token = encode_token(1, 'employee') 
+            self.headers = {"Authorization": f"Bearer {self.token}"}
 
     # Called after each test. Cleans up the database/ test environment
     def tearDown(self):
@@ -30,7 +35,7 @@ class TestService(unittest.TestCase):
             "base_price": 49.99,
             "description": "Standard oil change service"
         }
-        response = self.client.post('/services/', json=payload)
+        response = self.client.post('/services/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 201)
         # rhis line because confimrs api returns correct service, schema dump works, no bug mutatuin or droping fields
         self.assertEqual(response.get_json()["service_type"], "Oil Change")
@@ -42,7 +47,7 @@ class TestService(unittest.TestCase):
             "base_price": 49.99
         }
         
-        response = self.client.post('/services/', json=payload)
+        response = self.client.post('/services/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
         self.assertIn('errors', response.json)
         self.assertIn('description', response.json['errors'])
@@ -57,8 +62,26 @@ class TestService(unittest.TestCase):
         self.assertIsInstance(data, list)
         self.assertGreater(len(data), 0)
         self.assertIn("service_type", data[0])
-    
-    # 4 - Fetch by id 
+     
+    # 4- search by type
+    def test_search_services_by_type(self):
+        # First, create another service to have multiple in DB
+        payload = {
+            "service_type": "Tire Rotation",
+            "base_price": 20.00,
+            "description": "Rotating the tires"
+        }
+        self.client.post('/services/', json=payload, headers=self.headers)
+
+        # Now search for "Oil Change"
+        response = self.client.get('/services/?service_type=Oil Change')
+        self.assertEqual(response.status_code, 200)
+
+        data = response.get_json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["service_type"], "Oil Change")
+
+    # 5 - Fetch by id 
     def test_get__single_service(self):
         response = self.client.get(f'/services/{self.service_id}')
         self.assertEqual(response.status_code, 200)
@@ -66,46 +89,46 @@ class TestService(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data['service_type'], 'Oil Change')
     
-    # 5 - 404 handling
+    # 6 - 404 handling
     def test_get__nonexistent_service(self):
         response = self.client.get(f'/services/399')
         self.assertEqual(response.status_code, 404)
-        self.assertIn('error', response.get_json())
+        self.assertEqual('Service not found', response.get_json()['message'])
         
     # update
-    # 6 - Valid full update
+    # 7 - Valid full update
     def test_update__service(self):
         payload = {
             "service_type": "Brake Check",
             "base_price": 39.99,
             "description": "Full brake inspection"
         }
-        response = self.client.put(f'/services/{self.service_id}', json=payload)
+        response = self.client.put(f'/services/{self.service_id}', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["service_type"], "Brake Check")
         self.assertEqual(float(data["base_price"]), 39.99)
         self.assertEqual(data["description"], "Full brake inspection")
     
-    # 7 - invalid update input
+    # 8 - invalid update input
     def test_update__invalid_service(self):
         payload = {
             "service_type": "Brake Check",
             "base_price": 39.99
         }
-        response = self.client.put(f'/services/{self.service_id}', json=payload)
+        response = self.client.put(f'/services/{self.service_id}', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
         self.assertIn('errors', response.get_json())
         self.assertIn('description', response.get_json()['errors'])
         
     #patch
-    # 8 - Partial update
+    # 9 - Partial update 
     def test_patch__service(self):
         payload = {
             "description": "Updated just the description"
         }
         
-        response = self.client.patch(f'/services/{self.service_id}', json=payload)
+        response = self.client.patch(f'/services/{self.service_id}', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["description"], "Updated just the description")
@@ -113,41 +136,40 @@ class TestService(unittest.TestCase):
     
         
     #delete 
-    # 9 - delete and confirm 
+    # 10 - delete and confirm 
     def test_delete__service(self):
-        response = self.client.delete(f'/services/{self.service_id}')
+        response = self.client.delete(f'/services/{self.service_id}', headers=self.headers)
         self.assertEqual(response.status_code, 204)
         
         #confirm is gone
         get_response = self.client.get(f'/services/{self.service_id}')
         self.assertEqual(get_response.status_code, 404)
     
-    # 10 - 404 on delete
+    # 11 - 404 on delete
     def test_delete__nonexistent_service(self):
-        response = self.client.delete(f'/services/388')
+        response = self.client.delete(f'/services/388', headers=self.headers)
         self.assertEqual(response.status_code, 404)
-        self.assertIn('error', response.get_json())
-        
-    # dublicate check    
-    # 11 - Reject exact duplicates
+        self.assertEqual('Service not found', response.get_json()['message'])
+          
+    # 12 - Reject exact duplicates
     def test_create__duplicate_service(self):
         payload = {
             "service_type": "Oil Change",  # title-cased
             "base_price": 19.99,
             "description": "Standard oil change"
         }
-        response = self.client.post('/services/', json=payload)
+        response = self.client.post('/services/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("error", response.get_json())
+        self.assertEqual("Service with this type and description already exists.", response.get_json()['message'])
     
-    # 12 - allows variant services
+    # 13 - allows variant services
     def test_cretae__non_duplicate_service(self):
         payload = {
             "service_type": "oil change",  # lowercase but should be normalized
             "base_price": 59.99,
             "description": "Premium package"
         }
-        response = self.client.post('/services/', json=payload)
+        response = self.client.post('/services/', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 201)
    
    # check this later @unittest.skip 

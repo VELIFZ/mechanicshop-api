@@ -1,20 +1,48 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
 
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.whl
 
-venv
+# Virtual environments
+venv/
 env/
+.venv/
 
-.env
-
+# Flask instance folder
 instance/
-*.db
-*.sqlite
-*.log
+
+# Migrations
 migrations/
 
-.vscode/
+# Config secrets
+.env
+.flaskenv
 
+# Database files
+*.db
+*.sqlite
+
+# Logs
+*.log
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / editor settings
+.vscode/
+.idea/
+
+# macOS 
 .DS_Store
 
+# Miscellaneous
 NOTES.md
-ask.txt
+plan.txt

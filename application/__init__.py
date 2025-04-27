@@ -1,14 +1,13 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
-from application.extensions import ma
+from application.extensions import ma, limiter, cache
 from application.models import db
 from application.blueprints.customer import customer_bp
 from application.blueprints.employee import employee_bp
 from application.blueprints.service_ticket import service_ticket_bp
 from application.blueprints.inventory import inventory_bp
 from application.blueprints.service_ import service_bp
-import os
 
 def create_app(config_name="development"):
     
@@ -29,9 +28,11 @@ def create_app(config_name="development"):
     print(f"Using config: {config_name}")
     print(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     
-    # Initialize extensions
+    # add extensions to app
     db.init_app(app)
     ma.init_app(app)
+    limiter.init_app(app)
+    cache.init_app(app)
     migrate = Migrate(app, db)
     
     # Register blueprints
@@ -45,7 +46,6 @@ def create_app(config_name="development"):
     if config_name == "production":
         @app.errorhandler(Exception)
         def handle_error(e):
-            # Return a simplified error message instead of HTML traceback
             return jsonify({"error": str(e)}), 500
             
         @app.errorhandler(404)

@@ -1,14 +1,16 @@
 from flask import request, jsonify
 from . import service_bp
 from marshmallow import ValidationError
-from application.utils import validation_error_response, error_response
+from application.utils.utils import validation_error_response, error_response, token_required
 from sqlalchemy import select
 from application.models import Service, db
 from application.blueprints.service_.schemas import service_schema, services_schema
+from application.extensions import cache, limiter
 
 
 @service_bp.route("/", methods=["POST"])
-def create_service():
+@token_required
+def create_service(user_id):
     try:
         service_data = service_schema.load(request.json)
         
@@ -30,13 +32,28 @@ def create_service():
         db.session.rollback()
         return error_response(str(e), 500)
     
-
+# GET
+# with ?service_type=Oil, ?page=1&limit=10
 @service_bp.route('/', methods=['GET'])
+@cache.cached(timeout=60)
 def get_all_services():
-    query = db.session.query(Service)
-    services = db.session.execute(query).scalars().all()
-    return jsonify(services_schema.dump(services)), 200
+    try:
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 10, type=int)
+        service_type_filter = request.args.get('service_type')
 
+        query = db.session.query(Service)
+
+        if service_type_filter:
+            query = query.filter(Service.service_type.ilike(f"%{service_type_filter}%"))
+
+        services = query.offset((page - 1) * limit).limit(limit).all()
+        return jsonify(services_schema.dump(services)), 200
+    except Exception as e:
+        db.session.rollback()
+        return error_response(str(e), 500)
+
+# get by id
 @service_bp.route('/<int:service_id>', methods=['GET'])
 def get_single_service(service_id):
     service = db.session.query(Service).get(service_id)
@@ -46,7 +63,8 @@ def get_single_service(service_id):
 
 # UPDATE
 @service_bp.route('/<int:service_id>', methods=['PUT'])
-def update_service(service_id):
+@token_required
+def update_service(user_id, service_id):
     try:
         service_data = service_schema.load(request.json)
         service_data["service_type"] = service_data["service_type"].title()
@@ -59,7 +77,7 @@ def update_service(service_id):
             setattr(service, key, value)
 
         db.session.commit()
-        return service_schema.dump(service), 200
+        return jsonify(service_schema.dump(service)), 200
 
     except ValidationError as err:
         return validation_error_response(err)
@@ -69,7 +87,8 @@ def update_service(service_id):
     
 # PATCH
 @service_bp.route('/<int:service_id>', methods=['PATCH'])
-def partially_update_service(service_id):
+@token_required
+def partially_update_service(user_id, service_id):
     try:
         service = db.session.get(Service, service_id)
         
@@ -95,7 +114,8 @@ def partially_update_service(service_id):
               
 # DELETE
 @service_bp.route('/<int:service_id>', methods=['DELETE'])
-def delete_service(service_id):
+@token_required
+def delete_service(user_id, service_id):
     
     query = select(Service).where(Service.id == service_id)
     service = db.session.execute(query).scalars().first()
@@ -105,9 +125,5 @@ def delete_service(service_id):
     
     db.session.delete(service)
     db.session.commit()
-    return jsonify({"message": f"{service.id} deleted successfully"}), 204
-
-
-
-
-## service type filtering? services?type=oil
+    # For 204 responses, don't return a body as per HTTP standard
+    return "", 204

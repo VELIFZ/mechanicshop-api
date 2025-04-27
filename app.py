@@ -1,5 +1,6 @@
 from application import create_app
 from application.models import db
+
 app = create_app('development')
 
 with app.app_context():

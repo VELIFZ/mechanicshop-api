@@ -45,6 +45,7 @@ class Customer(Base):
     name: Mapped[str] = mapped_column(db.String(50))
     email: Mapped[str] = mapped_column(db.String(100), unique=True)
     phone: Mapped[str] = mapped_column(db.String(20))
+    password: Mapped[str] = mapped_column(db.String(256), nullable=False)
     
     # Relationship - Customer -> ServiceTicket (1:M)
     # One customer can have many service tickets
@@ -58,7 +59,7 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(db.String(50))
     email: Mapped[str] = mapped_column(db.String(100), unique=True)
     phone: Mapped[str] = mapped_column(db.String(20))
-    password: Mapped[str] = mapped_column(db.String(20))
+    password: Mapped[str] = mapped_column(db.String(256), nullable=False)
     salary: Mapped[float] = mapped_column(db.DECIMAL(10, 2))
     role: Mapped[str] = mapped_column(db.String(50))
     # address: Mapped[str] = mapped_column(db.String(200))
@@ -91,6 +92,7 @@ class SerializedPart(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     serial_number: Mapped[str] = mapped_column(db.String(50), nullable=False, unique=True)
     status: Mapped[str] = mapped_column(db.String(20))  # available, used, defective # do enum
+    is_deleted: Mapped[bool] = mapped_column(db.Boolean, default=False)
     
     # Foreign key - SerializedPart -> Inventory (M:1)
     inventory_id: Mapped[int] = mapped_column(db.ForeignKey("inventory.id"), nullable=False)
