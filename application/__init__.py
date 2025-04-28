@@ -23,10 +23,13 @@ def create_app(config_name="development"):
         app.config.from_object("config.ProductionConfig")
     elif config_name == "testing":
         app.config.from_object("config.TestingConfig")
+    else:
+        app.logger.warning(f"Unknown configuration '{config_name}', defaulting to development")
+        app.config.from_object("config.DevelopmentConfig")
     
     # Print the config to debug
-    print(f"Using config: {config_name}")
-    print(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+    app.logger.info(f"Starting application in {config_name} mode")
+    app.logger.info(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     
     # add extensions to app
     db.init_app(app)

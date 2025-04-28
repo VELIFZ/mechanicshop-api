@@ -20,10 +20,14 @@ class ServiceTicketSchema(ma.SQLAlchemyAutoSchema):
     customer_id = fields.Int(required=True, load_only=True)
     cost =  fields.Float(dump_only=True)
     
-    # only used for loading from rquest
+    # only used for loading from request
     employee_ids = fields.List(fields.Int(), load_only=True)
     service_ids = fields.List(fields.Int(), load_only=True)
     part_ids = fields.List(fields.Int(), load_only=True)
+    
+    # Used for mechanic edit endpoint
+    add_ids = fields.List(fields.Int(), load_only=True)
+    remove_ids = fields.List(fields.Int(), load_only=True)
     
     # Only for output nested relationships
     customer = fields.Nested(CustomerSchema(only=("id", "name", "email")), dump_only=True)

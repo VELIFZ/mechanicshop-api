@@ -2,13 +2,16 @@ from flask import request, jsonify
 from . import service_ticket_bp
 from application.models import db, ServiceTicket, Employee, Service, SerializedPart
 from application.blueprints.service_ticket.schemas import service_ticket_schema, service_tickets_schema
-from application.utils.utils import token_required, error_response, validation_error_response
+from application.utils.utils import (
+    token_required, error_response, calculate_ticket_cost,
+    success_response, get_pagination_params, paginate_query
+)
 from application.extensions import cache
 from datetime import datetime
 from decimal import Decimal
-from config import Constants
+from marshmallow import ValidationError
 
-# POST
+# POST - create a new service ticket
 @service_ticket_bp.route('/', methods=['POST'])
 @token_required
 def create_service_ticket(user_id):
@@ -36,17 +39,26 @@ def create_service_ticket(user_id):
             ticket.services = db.session.query(Service).filter(Service.id.in_(service_ids)).all()
 
         if part_ids:
-            available_parts = db.session.query(SerializedPart).filter(SerializedPart.id.in_(part_ids), SerializedPart.status == "available").all()
-
+            # Only get parts that are available
+            available_parts = db.session.query(SerializedPart).filter(
+                SerializedPart.id.in_(part_ids), 
+                SerializedPart.status == "available"
+            ).all()
+            
+            # Check if all requested parts are available
+            if len(available_parts) != len(part_ids):
+                return error_response("Some parts are not available", 422)
+                
             ticket.serialized_parts = available_parts
+            
+            # If status is closed, update parts status to used
+            if ticket.status == "closed":
+                for part in ticket.serialized_parts:
+                    part.status = "used"
 
         # set the cost before saving!
         if ticket.status == "closed":
-            ticket.cost = round(
-                (sum(service.base_price for service in ticket.services) +
-                sum(part.inventory.price for part in ticket.serialized_parts)) 
-                * Constants.TAX_RATE, 2
-            )
+            ticket.cost = calculate_ticket_cost(ticket.services, ticket.serialized_parts)
         else:
             ticket.cost = Decimal("0.00") #-for db storage
         
@@ -54,33 +66,49 @@ def create_service_ticket(user_id):
         db.session.add(ticket)
         db.session.commit()
         
-        return jsonify(service_ticket_schema.dump(ticket)), 201
+        return success_response(
+            message="Service ticket created successfully",
+            data=service_ticket_schema.dump(ticket),
+            status_code=201
+        )
     
     except Exception as err:
         db.session.rollback()
         return error_response("Validation Error", 422, {"errors": str(err)})
 
-#GET
+#GET - get all service tickets
 @service_ticket_bp.route("/", methods=["GET"])
 @cache.cached(timeout=60)
 def get_all_tickets():
     try:
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        status_filter = request.args.get('status')
-        customer_id_filter = request.args.get('customer_id', type=int)
-
+        page, limit, sort_by, sort_order = get_pagination_params()
+        
+        # Start with base query, filtering out deleted tickets
         query = db.session.query(ServiceTicket).filter_by(is_deleted=False)
-
+        
+        # Apply filters
+        filter_params = {
+            'status': request.args.get('status'),
+            'customer_id': request.args.get('customer_id', type=int)
+        }
+        
+        # Handle special case for string ilike filters manually
+        status_filter = request.args.get('status')
         if status_filter:
             query = query.filter(ServiceTicket.status.ilike(f"%{status_filter}%"))
-
+            
+        # Handle direct equality filters
+        customer_id_filter = request.args.get('customer_id', type=int)
         if customer_id_filter:
             query = query.filter(ServiceTicket.customer_id == customer_id_filter)
+        
+        # Apply pagination
+        tickets, pagination = paginate_query(query, ServiceTicket, page, limit, sort_by, sort_order)
 
-        tickets = query.offset((page - 1) * limit).limit(limit).all()
-
-        return jsonify(service_tickets_schema.dump(tickets)), 200
+        return success_response(
+            data=service_tickets_schema.dump(tickets),
+            meta={"pagination": pagination}
+        )
 
     except Exception as err:
         db.session.rollback()
@@ -92,10 +120,10 @@ def get_ticket(id):
     ticket = db.session.get(ServiceTicket, id)
     if not ticket or ticket.is_deleted:
         return error_response("Service ticket not found.", 404)
-    return jsonify(service_ticket_schema.dump(ticket)), 200
+    return success_response(data=service_ticket_schema.dump(ticket))
 
 
-# PATCH
+# PATCH - partial update a service ticket
 @service_ticket_bp.route("/<int:id>", methods=["PATCH"])
 @token_required
 def update_service_ticket(user_id, id):
@@ -106,6 +134,7 @@ def update_service_ticket(user_id, id):
     try:
         data = request.get_json()
 
+        # 1 - update simple fields
         if "status" in data:
             ticket.status = data["status"]
             if ticket.status == "closed" and not ticket.closed_at:
@@ -114,33 +143,71 @@ def update_service_ticket(user_id, id):
         if "work_summary" in data:
             ticket.work_summary = data["work_summary"]
 
-        if "employee_ids" in data:
-            ticket.employees = db.session.query(Employee).filter(Employee.id.in_(data["employee_ids"])).all()
+        # 2- update employee
+        if "add_employee_ids" in data and data["add_employee_ids"]:
+            new_employees = db.session.query(Employee).filter(Employee.id.in_(data["add_employee_ids"])).all()
+            if len(new_employees) != len(data["add_employee_ids"]):
+                return error_response("Some employee IDs not found.", 404)
+            
+            #current employees because set is faster than list - O(1) vs O(n)
+            current_employee_ids = {e.id for e in ticket.employees}
+            ticket.employees.extend([e for e in new_employees if e.id not in current_employee_ids]) 
 
-        if "service_ids" in data:
-            ticket.services = db.session.query(Service).filter(Service.id.in_(data["service_ids"])).all()
+        if "remove_employee_ids" in data and data["remove_employee_ids"]:
+            remove_employees = db.session.query(Employee).filter(Employee.id.in_(data["remove_employee_ids"])).all()
+            if len(remove_employees) != len(data["remove_employee_ids"]):
+                return error_response("Some employee IDs to remove not found.", 404)
 
-        if "part_ids" in data:
-            ticket.serialized_parts = db.session.query(SerializedPart).filter(SerializedPart.id.in_(data["part_ids"])).all()
+            for emp in remove_employees:
+                if emp in ticket.employees:
+                    ticket.employees.remove(emp)
 
-        # Finalize cost and parts if closed
+        # 3- update service
+        if "add_service_ids" in data:
+            new_services = db.session.query(Service).filter(Service.id.in_(data["add_service_ids"])).all()
+            if len(new_services) != len(data["add_service_ids"]):
+                return error_response("Some service IDs not found.", 404)
+            ticket.services.extend([s for s in new_services if s not in ticket.services])
+
+        if "remove_service_ids" in data:
+            remove_services = db.session.query(Service).filter(Service.id.in_(data["remove_service_ids"])).all()
+            for serv in remove_services:
+                if serv in ticket.services:
+                    ticket.services.remove(serv)
+
+        # 4- update part
+        if "add_part_ids" in data:
+            new_parts = db.session.query(SerializedPart).filter(
+                SerializedPart.id.in_(data["add_part_ids"]),
+                SerializedPart.status == "available"
+            ).all()
+            if len(new_parts) != len(data["add_part_ids"]):
+                return error_response("Some part IDs not found or not available.", 422)
+            ticket.serialized_parts.extend([p for p in new_parts if p not in ticket.serialized_parts])
+
+
+        if "remove_part_ids" in data:
+            remove_parts = db.session.query(SerializedPart).filter(
+                SerializedPart.id.in_(data["remove_part_ids"])
+            ).all()
+            for part in remove_parts:
+                if part in ticket.serialized_parts:
+                    ticket.serialized_parts.remove(part)
+
+        # 5. Final: Update cost if closed
         if ticket.status == "closed":
-            ticket.cost = round(
-                (sum(s.base_price for s in ticket.services) +
-                 sum(p.inventory.price for p in ticket.serialized_parts)) * Constants.TAX_RATE, 2
-            )
+            ticket.cost = calculate_ticket_cost(ticket.services, ticket.serialized_parts)
             for part in ticket.serialized_parts:
                 part.status = "used"
                 if part.inventory and part.inventory.quantity_in_stock > 0:
                     part.inventory.quantity_in_stock -= 1
 
         db.session.commit()
-        return jsonify(service_ticket_schema.dump(ticket)), 200
+        return success_response(data=service_ticket_schema.dump(ticket))
 
     except Exception as err:
         db.session.rollback()
         return error_response("Update failed", 422, {"error": str(err)})
-
 
 # DELETE (soft) - saved for audit and whatever needed
 @service_ticket_bp.route("/<int:id>", methods=["DELETE"])
@@ -153,67 +220,7 @@ def soft_delete_service_ticket(user_id, id):
     try:
         ticket.is_deleted = True
         db.session.commit()
-        return jsonify({"status": "success", "message": "Service ticket soft-deleted"}), 200
+        return success_response(message="Service ticket soft-deleted")
     except Exception as err:
         db.session.rollback()
         return error_response(str(err), 500)
-
-
-@service_ticket_bp.route('/<int:ticket_id>/edit', methods=['PUT'])
-@token_required
-def edit_ticket_mechanics(user_id, ticket_id):
-    try:
-        ticket = db.session.get(ServiceTicket, ticket_id)
-        if not ticket:
-            return error_response("Ticket not found", 404)
-        
-        data = request.get_json()
-        remove_ids = data.get('remove_ids', [])
-        add_ids = data.get('add_ids', [])
-        
-        # Remove mechanics
-        if remove_ids:
-            mechanics_to_remove = db.session.query(Employee).filter(Employee.id.in_(remove_ids)).all()
-            for mechanic in mechanics_to_remove:
-                if mechanic in ticket.employees:
-                    ticket.employees.remove(mechanic)
-        
-        # Add mechanics
-        if add_ids:
-            mechanics_to_add = db.session.query(Employee).filter(Employee.id.in_(add_ids)).all()
-            for mechanic in mechanics_to_add:
-                if mechanic not in ticket.employees:
-                    ticket.employees.append(mechanic)
-        
-        db.session.commit()
-        return jsonify(service_ticket_schema.dump(ticket)), 200
-    
-    except Exception as e:
-        db.session.rollback()
-        return error_response(str(e), 500)
-    
-    
-@service_ticket_bp.route('/<int:ticket_id>/add-part/<int:part_id>', methods=['POST'])
-@token_required
-def add_part_to_ticket(user_id, ticket_id, part_id):
-    try:
-        ticket = db.session.get(ServiceTicket, ticket_id)
-        if not ticket:
-            return error_response("Ticket not found", 404)
-            
-        part = db.session.get(SerializedPart, part_id)
-        if not part:
-            return error_response("Part not found", 404)
-            
-        if part.status != "available":
-            return error_response("Part is not available", 400)
-            
-        ticket.serialized_parts.append(part)
-        part.status = "used"
-        
-        db.session.commit()
-        return jsonify(service_ticket_schema.dump(ticket)), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return error_response(str(e), 500)

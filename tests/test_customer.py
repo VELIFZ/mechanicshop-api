@@ -22,7 +22,15 @@ class TestCustomer(unittest.TestCase):
             db.session.remove()
             db.drop_all()
         return super().tearDown()
-
+    
+    # Helper method for authentication
+    def login_and_get_token(self):
+        login_payload = {"email": "test@test.com", "password": "test1234"}
+        login_response = self.client.post("/customers/login", json=login_payload)
+        token = login_response.get_json()["data"]["token"]
+        return {"Authorization": f"Bearer {token}"}
+    
+    # -----POST-----
     # 1- Valid creation
     def test_create__customer(self):
         payload = {
@@ -32,11 +40,11 @@ class TestCustomer(unittest.TestCase):
             "password": 'test1234'
         }
         response = self.client.post('/customers/', json=payload)
-        data = response.get_json()
-        print(f'DATA: {data}')
         self.assertEqual(response.status_code, 201)
+        
+        data = response.get_json()
         # Check if got back valid data
-        self.assertEqual(data["name"], "Jane Doe")
+        self.assertEqual(data["data"]["name"], "Jane Doe")
         
     # 2- invalid creation    
     def test_create__invalid_customer(self):
@@ -82,45 +90,153 @@ class TestCustomer(unittest.TestCase):
         payload = {"email": "test@test.com", "password": "test1234"}
         response = self.client.post("/customers/login", json=payload)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("token", response.get_json())
+        response_data = response.get_json()
+        self.assertIn("token", response_data["data"])
+        
+    # 6- Token decode direct
+    def test_token_decode_direct(self):
+        headers = self.login_and_get_token()
+        token = headers["Authorization"].split(" ")[1]
 
-    # 6- Get all customers
+        with self.app.app_context():
+            decoded = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+
+        self.assertIn("sub", decoded)
+        self.assertIn("role", decoded)
+        self.assertEqual(decoded["role"], "customer")
+        self.assertEqual(decoded["sub"], str(self.customer_id))  # sub is a string
+
+    # 7- Invalid password
+    def test_invalid_password(self):
+        payload = {"email": "test@test.com", "password": "wrongpass"}
+        response = self.client.post("/customers/login", json=payload)
+        self.assertEqual(response.status_code, 400)    
+
+    # 8- Nonexistent user
+    def test_nonexistent_user(self):
+        payload = {"email": "nouser@test.com", "password": "any"}
+        response = self.client.post("/customers/login", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    # 9- test_phone_length_or_format
+    def test_phone_length_or_format(self):
+        payload = {"name": "Test Customer", "email": "test@test.com", "phone": "12345678901234567890", "password": "test1234"}
+        response = self.client.post("/customers/", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone', response.get_json()['errors'])
+
+    # -----GET-----
+    # 1- Get all customers
     def test_get__customers(self):
         response = self.client.get('/customers/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('email', response.json[0])
+        response_data = response.get_json()
+        self.assertIn('data', response_data)
+        self.assertGreater(len(response_data['data']), 0)
+        self.assertIn('email', response_data['data'][0])
         
-    # 7- Get single customer (authenticated route)
+    # 2- Get single customer (authenticated route)
     def test_get__single_customer(self):
         # Get authorization token
         headers = self.login_and_get_token()
         response = self.client.get(f'/customers/{self.customer_id}', headers=headers)
         self.assertEqual(response.status_code, 200)
-        data = response.get_json()
+        data = response.get_json()['data']
         self.assertEqual(data['name'], 'Test Customer')
         self.assertEqual(data['email'], 'test@test.com')
 
-    # 8- Get my profile
+    # 3- Get my profile
     def test_get_my_profile(self):
         headers = self.login_and_get_token()
         response = self.client.get("/customers/me", headers=headers)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["email"], "test@test.com")
+        self.assertEqual(response.get_json()["data"]["email"], "test@test.com")
+        
+    # 4- Get all tickets for a customer (authenticated route)
+    def test_get_my_all_tickets(self):
+        # Create a test ticket first
+        with self.app.app_context():
+            ticket = ServiceTicket(
+                customer_id=self.customer_id,
+                vin="TESTTKT12345678",
+                work_summary="Test ticket",
+                cost=75.00,
+                status="open"
+            )
+            db.session.add(ticket)
+            db.session.commit()
+        
+        # Log in and get token
+        headers = self.login_and_get_token()
+        
+        # Get my tickets
+        response = self.client.get('/customers/me/tickets', headers=headers)
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertIn("data", data)
+        self.assertIn("meta", data)
+        self.assertIn("pagination", data["meta"])
+        self.assertEqual(data["meta"]["pagination"]["total_items"], 1)
+        
+        # Verify ticket data
+        tickets = data["data"]
+        self.assertEqual(len(tickets), 1)
+        self.assertEqual(tickets[0]["vin"], "TESTTKT12345678")
+        self.assertEqual(tickets[0]["work_summary"], "Test ticket")
+
+    # 5- Get tickets with status filter (authenticated route)
+    def test_get_my_tickets_with_status_filter(self):
+        # Create tickets with different statuses
+        with self.app.app_context():
+            open_ticket = ServiceTicket(
+                customer_id=self.customer_id,
+                vin="OPENTKT123456789",
+                work_summary="Open ticket",
+                cost=80.00,
+                status="open"
+            )
+            
+            closed_ticket = ServiceTicket(
+                customer_id=self.customer_id,
+                vin="CLSDTKT123456789",
+                work_summary="Closed ticket",
+                cost=90.00,
+                status="closed"
+            )
+            
+            db.session.add_all([open_ticket, closed_ticket])
+            db.session.commit()
+            
+        # Get token
+        headers = self.login_and_get_token()
+        
+        # Filter by open status
+        response = self.client.get('/customers/me/tickets?status=open', headers=headers)
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertIn("data", data)
+        tickets = data["data"]
+        self.assertEqual(len(tickets), 1)
+        self.assertEqual(tickets[0]["status"], "open")
     
-    # 9- Update a customer
+    # -----PUT-----
+    # 1- Update a customer
     def test_update__customer(self):
         headers = self.login_and_get_token()
         payload = {
             "name": "Updated Customer",
             "phone": "1112223333",
-            "email": "test@test.com", 
-            "password": 'test1234'
+            "email": "test@test.com",
+            "password": "123zamzam"
         }
         response = self.client.put(f'/customers/{self.customer_id}', json=payload, headers=headers)
         self.assertEqual(response.status_code, 200)
         # not dublicate email since belogs to the id
 
-    # 10- Partial update a customer
+    # -----PATCH-----
+    # 1- Partial update a customer
     def test_patch__customer(self):
         headers = self.login_and_get_token()
         payload = {
@@ -128,18 +244,45 @@ class TestCustomer(unittest.TestCase):
         }
         response = self.client.patch(f'/customers/{self.customer_id}', json=payload, headers=headers)
         self.assertEqual(response.status_code, 200)
+        
+    # 2- Update password (authenticated route)
+    def test_update_password(self):
+        # Get token
+        headers = self.login_and_get_token()
+        
+        # Try to update with wrong current password
+        response = self.client.patch(
+            '/customers/update-password',
+            json={"current_password": "wrong", "new_password": "newpass123"},
+            headers=headers
+        )
+        self.assertEqual(response.status_code, 401)
+        
+        # Update with correct password
+        response = self.client.patch(
+            '/customers/update-password',
+            json={"current_password": "test1234", "new_password": "newpass123"},
+            headers=headers
+        )
+        self.assertEqual(response.status_code, 200)
+        
+        # Try to login with new password
+        payload = {"email": "test@test.com", "password": "newpass123"}
+        response = self.client.post("/customers/login", json=payload)
+        self.assertEqual(response.status_code, 200)
     
-    # 11- Delete a customer
+    # -----DELETE-----
+    # 1- Delete a customer
     def test_delete_customer(self):
         # Log in to get token
         headers = self.login_and_get_token()
         response = self.client.delete('/customers/', headers=headers)
-        if response.status_code != 204:
-            print("DELETE RESPONSE JSON:", response.get_json())
+        self.assertEqual(response.status_code, 200)
         
-        self.assertIn(response.status_code, [204])
+        self.assertEqual(response.get_json()["status"], "success")
+        self.assertEqual(response.get_json()["message"], "Customer deleted successfully")
         
-    # 12- Delete a customer with tickets
+    # 2- Delete a customer with tickets
     def test_delete_customer_with_tickets(self):
         with self.app.app_context():
             # Create a ticket for our customer
@@ -160,116 +303,8 @@ class TestCustomer(unittest.TestCase):
         response = self.client.delete('/customers/', headers=headers)
         self.assertEqual(response.status_code, 400)
         self.assertIn("Cannot delete customer", response.get_json()["message"])
-
-                
+          
         # Verify the customer still exists
         with self.app.app_context():
             customer = db.session.get(Customer, self.customer_id)
             self.assertIsNotNone(customer)
-            
-    # 13- Token decode direct
-    def test_token_decode_direct(self):
-        with self.app.app_context():
-            login_payload = {"email": "test@test.com", "password": "test1234"}
-            login_response = self.client.post("/customers/login", json=login_payload)
-            token = login_response.get_json()["token"]
-
-            try:
-                decoded = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-                print("TOKEN DECODED:", decoded)
-            except Exception as e:
-                print("MANUAL TOKEN DECODE ERROR:", e)
-
-    # 13- Login
-    def test_valid_login(self):
-        payload = {"email": "test@test.com", "password": "test1234"}
-        response = self.client.post("/customers/login", json=payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("token", response.get_json())
-
-    # 14- Invalid password
-    def test_invalid_password(self):
-        payload = {"email": "test@test.com", "password": "wrongpass"}
-        response = self.client.post("/customers/login", json=payload)
-        self.assertEqual(response.status_code, 401)    
-
-    # 15- Nonexistent user
-    def test_nonexistent_user(self):
-        payload = {"email": "nouser@test.com", "password": "any"}
-        response = self.client.post("/customers/login", json=payload)
-        self.assertEqual(response.status_code, 401)
-
-    # 16- test_phone_length_or_format
-    def test_phone_length_or_format(self):
-        payload = {"name": "Test Customer", "email": "test@test.com", "phone": "12345678901234567890", "password": "test1234"}
-        response = self.client.post("/customers/", json=payload)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('phone', response.get_json()['errors'])
-        
-    
-    # 17- Get all tickets for a customer (authenticated route)
-    def test_get_my_all_tickets(self):
-        with self.app.app_context():
-            ticket1 = ServiceTicket(
-                customer_id=self.customer_id,
-                vin="VIN001",
-                work_summary="Check brakes",
-                cost=100.00,
-                status="open"
-            )
-            ticket2 = ServiceTicket(
-                customer_id=self.customer_id,
-                vin="VIN002",
-                work_summary="Change oil",
-                cost=40.00,
-                status="closed"
-            )
-            db.session.add_all([ticket1, ticket2])
-            db.session.commit()
-
-        headers = self.login_and_get_token()
-        
-        response = self.client.get("/customers/me/tickets", headers=headers)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.get_json()), 2)
-        
-    # 18- Get tickets with status filter (authenticated route)
-    def test_get_my_tickets_with_status_filter(self):
-        with self.app.app_context():
-            ticket = ServiceTicket(
-                customer_id=self.customer_id,
-                vin="VIN001",
-                work_summary="Check brakes",
-                cost=100.00,
-                status="open"
-            )
-            db.session.add(ticket)
-            db.session.commit()
-
-        headers = self.login_and_get_token()
-
-        response = self.client.get("/customers/me/tickets?status=open", headers=headers)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.get_json()), 1)
-        self.assertEqual(response.get_json()[0]["status"], "open")
-
-
-    # 19- Update password (authenticated route)
-    def test_update_password(self):
-        headers = self.login_and_get_token()
-
-        update_payload = {
-            "old_password": "test1234",
-            "new_password": "newpass456"
-        }
-        response = self.client.patch("/customers/update-password", json=update_payload, headers=headers)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Password updated", response.get_json()["message"])
-        
-    # Helper method for authentication
-    def login_and_get_token(self):
-        login_payload = {"email": "test@test.com", "password": "test1234"}
-        login_response = self.client.post("/customers/login", json=login_payload)
-        token = login_response.get_json()["token"]
-        headers = {"Authorization": f"Bearer {token}"}
-        return headers

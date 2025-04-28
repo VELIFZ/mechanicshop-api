@@ -4,11 +4,13 @@ from . import inventory_bp
 from application.models import Inventory, SerializedPart, db
 from application.blueprints.inventory.schemas import inventory_schema, inventories_schema, serialized_part_schema, serialized_parts_schema
 from marshmallow import ValidationError
-from application.utils.utils import validation_error_response, token_required, error_response
-from sqlalchemy import select
+from application.utils.utils import (
+    validation_error_response, token_required, error_response,
+    success_response, get_pagination_params, paginate_query, apply_filters
+)
 from application.extensions import cache
 
-# POST - 
+# POST - Create inventory item
 @inventory_bp.route('/', methods=['POST'])
 @token_required
 def create_inventory(user_id):
@@ -16,7 +18,11 @@ def create_inventory(user_id):
         inventory_data = inventory_schema.load(request.json)
         db.session.add(inventory_data)
         db.session.commit()
-        return jsonify(inventory_schema.dump(inventory_data)), 201
+        return success_response(
+            message="Inventory item created successfully",
+            data=inventory_schema.dump(inventory_data),
+            status_code=201
+        )
         
     except ValidationError as err:
         return validation_error_response(err)
@@ -33,27 +39,29 @@ def create_inventory(user_id):
 @cache.cached(timeout=60)
 def get_inventory():
     try:
-        deleted_filter = request.args.get("deleted")
-        inventory_number = request.args.get("inventory_number")
-        part_name = request.args.get("part_name")
-        page = request.args.get("page", 1, type=int)
-        limit = request.args.get("limit", 10, type=int)
-
+        page, limit, sort_by, sort_order = get_pagination_params()
+        deleted_filter = request.args.get("deleted") == "true"
+        
+        # Start with base query
         query = db.session.query(Inventory)
+        
+        # Filter by deletion status
+        query = query.filter(Inventory.is_deleted == deleted_filter)
+        
+        # Apply filters
+        filter_params = {
+            'inventory_number': request.args.get('inventory_number'),
+            'part_name': request.args.get('part_name')
+        }
+        query = apply_filters(query, Inventory, filter_params)
+        
+        # Apply pagination
+        items, pagination = paginate_query(query, Inventory, page, limit, sort_by, sort_order)
 
-        if deleted_filter == "true":
-            query = query.filter(Inventory.is_deleted == True)
-        else:
-            query = query.filter(Inventory.is_deleted == False)
-
-        if inventory_number:
-            query = query.filter(Inventory.inventory_number.ilike(f"%{inventory_number}%"))
-        if part_name:
-            query = query.filter(Inventory.part_name.ilike(f"%{part_name}%"))
-
-        inventory_items = query.offset((page - 1) * limit).limit(limit).all()
-
-        return jsonify(inventories_schema.dump(inventory_items)), 200
+        return success_response(
+            data=inventories_schema.dump(items),
+            meta={"pagination": pagination}
+        )
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -67,7 +75,7 @@ def get_inventory_by_id(inventory_id):
         if inventory is None or inventory.is_deleted:
             return error_response("Inventory not found", 404)
         
-        return jsonify(inventory_schema.dump(inventory)), 200
+        return success_response(data=inventory_schema.dump(inventory))
     
     except Exception as e:
         db.session.rollback()
@@ -85,12 +93,12 @@ def update_inventory(user_id, inventory_id):
         update_data = request.json
 
         # Allow updating specific fields only
-        for field in ['price', 'quantity', 'location']:
+        for field in ['price', 'quantity_in_stock']:
             if field in update_data:
                 setattr(inventory, field, update_data[field])
 
         db.session.commit()
-        return jsonify(inventory_schema.dump(inventory)), 200
+        return success_response(data=inventory_schema.dump(inventory))
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -109,7 +117,7 @@ def delete_inventory(user_id, inventory_id):
 
         inventory.is_deleted = True
         db.session.commit()
-        return jsonify({"status": "success", "message": "Inventory deleted (soft)"}), 200
+        return success_response(message="Inventory deleted (soft)")
     
     except Exception as e:
         db.session.rollback()
@@ -131,7 +139,11 @@ def create_serialized_part(user_id):
         
         db.session.add(data)
         db.session.commit()
-        return jsonify(serialized_part_schema.dump(data)), 201
+        return success_response(
+            message="Serialized part created successfully",
+            data=serialized_part_schema.dump(data),
+            status_code=201
+        )
     
     except ValidationError as err:
         print(" ValidationError:", err.messages)  
@@ -150,18 +162,21 @@ def create_serialized_part(user_id):
 @cache.cached(timeout=60)
 def get_serialized_parts():
     try:
-        status = request.args.get('status')
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
+        page, limit, sort_by, sort_order = get_pagination_params()
 
+        # Start with base query
         query = db.session.query(SerializedPart)
 
+        status = request.args.get('status')
         if status:
             query = query.filter(SerializedPart.status == status)
 
-        parts = query.offset((page - 1) * limit).limit(limit).all()
+        parts, pagination = paginate_query(query, SerializedPart, page, limit, sort_by, sort_order)
 
-        return jsonify(serialized_parts_schema.dump(parts)), 200
+        return success_response(
+            data=serialized_parts_schema.dump(parts),
+            meta={"pagination": pagination}
+        )
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -175,7 +190,7 @@ def get_serialized_parts_by_id(part_id):
         
         if not part or part.is_deleted:
             return error_response("Serialized part not found", 404)
-        return jsonify(serialized_part_schema.dump(part)), 200
+        return success_response(data=serialized_part_schema.dump(part))
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -189,14 +204,17 @@ def update_serialized_part_status(user_id, part_id):
         if not part:
             return error_response("Serialized part not found", 404)
         
+        if part.is_deleted:
+            return error_response("Serialized part not found", 404)
+        
         new_status = request.json.get('status')
         if new_status not in ["available", "used", "defective"]:
-            return jsonify({'errors': {'status': ['Invalid status value.']}}), 400
+            return error_response("Invalid status value", 400, {"status": ["Invalid status value."]})
         
         part.status = new_status
         db.session.commit()
         
-        return jsonify(serialized_part_schema.dump(part)), 200
+        return success_response(data=serialized_part_schema.dump(part))
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -208,12 +226,13 @@ def update_serialized_part_status(user_id, part_id):
 def delete_serialized_part(user_id, part_id):
     try:
         part = db.session.get(SerializedPart, part_id)
-        if not part or part.is_deleted:
+        if not part:
             return error_response("Serialized part not found", 404)
-
+        
         part.is_deleted = True
         db.session.commit()
-        return jsonify({"status": "success", "message": "Serialized part deleted (soft)"}), 200
+        
+        return success_response(message="Serialized part deleted successfully")
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)

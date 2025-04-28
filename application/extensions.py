@@ -7,7 +7,12 @@ ma = Marshmallow()
 limiter = Limiter(key_func=get_remote_address,
                   default_limits=["100 per day", "50 per hour"]
                   )
-cache = Cache(config={'CACHE_TYPE': 'SimpleCache'})
+                  
+cache = Cache(config={
+    'CACHE_TYPE': 'SimpleCache',
+    'CACHE_DEFAULT_TIMEOUT': 300,  # 5 minutes default
+    'CACHE_THRESHOLD': 500  # Maximum number of items to store in the cache
+})
 
 
 

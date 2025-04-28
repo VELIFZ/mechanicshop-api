@@ -4,10 +4,15 @@ from application.models import Customer, ServiceTicket, db
 from .schemas import customer_schema, customers_schema, login_schema
 from application.extensions import limiter, cache
 from marshmallow import ValidationError
-from application.utils.utils import validation_error_response, error_response, encode_token, token_required, verify_password, hash_password, is_strong_password
+from application.utils.utils import (
+    validation_error_response, error_response, encode_token, token_required, 
+    verify_password, hash_password, is_strong_password, success_response,
+    get_pagination_params, paginate_query, apply_filters
+)
 from sqlalchemy import select
 
-#POST/login
+#MARK: POST
+# ---login---
 @customer_bp.route("/login", methods=['POST'])
 @limiter.limit('3 per 10 minutes')
 def login():
@@ -24,29 +29,21 @@ def login():
     if customer and verify_password(customer.password, password):
         token = encode_token(customer.id, 'customer')
         
-        response = {
-            'status': 'success',
-            'message': 'successfully logged in.',
-            'token': token
-        }
-        
-        return jsonify(response), 200
+        return success_response(
+            message="Successfully logged in",
+            data={"token": token}
+        )
     else:
         return error_response("Invalid email or password", 401)
 
-# POST/create new
+# ---Create new---
 @customer_bp.route('/', methods=['POST'])
 @limiter.limit("3 per hour")
 def create_customer():
     try:
         customer_data = customer_schema.load(request.json)
-        customer_data["email"] = customer_data["email"].lower().strip()
         
-        # Check password strength
-        if not is_strong_password(customer_data['password']):
-            return error_response("Password must be at least 8 characters, including letters and numbers.", 400)
-        
-        # Check if customer with this email already exists
+        # Check duplicate email
         existing_customer = db.session.query(Customer).filter_by(email=customer_data['email']).first()
         if existing_customer:
             return error_response("Customer already exists", 409, {"customer": customer_schema.dump(existing_customer)})
@@ -58,52 +55,46 @@ def create_customer():
         new_customer = Customer(**customer_data)
         db.session.add(new_customer)
         db.session.commit()
-        return jsonify(customer_schema.dump(new_customer)), 201
+        
+        return success_response(message="Customer created successfully", data=customer_schema.dump(new_customer), status_code=201)
+    
     except ValidationError as err:
         return validation_error_response(err)
     except Exception as e:
-        print(f"DB ERROR: {e}")
         db.session.rollback()
         return error_response(str(e), 500)
-    
 
-# GET 
+#MARK: GET
 # get curtomer with Pagination, Filter, and Sort
 @customer_bp.route('/', methods=['GET'])
 @cache.cached(timeout=60)
 def get_customers():
     try:
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        name_filter = request.args.get('name')
-        email_filter = request.args.get('email')
-        sort_by = request.args.get('sort_by', 'id')  # default sort by id
-        sort_order = request.args.get('sort_order', 'asc')  # asc or desc
+        page, limit, sort_by, sort_order = get_pagination_params()
         
+        # Start with base query
         query = db.session.query(Customer)
         
-        # Filtering
-        if name_filter:
-            query = query.filter(Customer.name.ilike(f"%{name_filter}%"))
-        if email_filter:
-            query = query.filter(Customer.email.ilike(f"%{email_filter}%"))
-            
-        # Sorting
-        if sort_order == 'desc':
-            query = query.order_by(getattr(Customer, sort_by).desc())
-        else:
-            query = query.order_by(getattr(Customer, sort_by).asc())
+        # Apply filters
+        filter_params = {
+            'name': request.args.get('name'),
+            'email': request.args.get('email')
+        }
+        query = apply_filters(query, Customer, filter_params)
+        
+        # Apply pagination
+        customers, pagination = paginate_query(query, Customer, page, limit, sort_by, sort_order)
 
-        # Pagination
-        customers = query.offset((page - 1) * limit).limit(limit).all()
-
-        return jsonify(customers_schema.dump(customers)), 200
+        return success_response(
+            data=customers_schema.dump(customers),
+            meta={"pagination": pagination}
+        )
 
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
     
-#  Get  by ID
+# ---get by ID---
 @customer_bp.route('/<int:id>', methods=['GET'])
 @token_required
 def get_customer(customer_id, id):   
@@ -114,13 +105,13 @@ def get_customer(customer_id, id):
         if not customer:
             return error_response("Customer not found", 404)
         
-        return jsonify(customer_schema.dump(customer)), 200
+        return success_response(data=customer_schema.dump(customer))
     
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
 
-# /me -get profile
+# --- profile /me---
 @customer_bp.route('/me', methods=['GET'])
 @limiter.limit("10 per minute")
 @token_required
@@ -128,27 +119,38 @@ def get_my_profile(customer_id):
     customer = db.session.get(Customer, customer_id)
     if customer is None:
         return error_response("Customer not found", 404)
-    return jsonify(customer_schema.dump(customer)), 200
+    return success_response(data=customer_schema.dump(customer))
 
 
-# my tickets with pagination
+# ---my tickets with pagination---
 @customer_bp.route('/me/tickets', methods=['GET'])
 @token_required
 def get_my_tickets(customer_id):
     try:
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 5, type=int)
-        status = request.args.get('status', None)
-
+        page, limit, sort_by, sort_order = get_pagination_params()
+        
+        # Base query filtered by customer_id
         query = db.session.query(ServiceTicket).filter(ServiceTicket.customer_id == customer_id)
+        
+        # Additional status filter if provided
+        status = request.args.get('status')
         if status:
-            query = query.filter_by(status=status)
+            # Verify status is a valid value before filtering
+            valid_statuses = ['open', 'in_progress', 'closed']
+            if status in valid_statuses:
+                query = query.filter_by(status=status)
+            else:
+                return error_response(f"Invalid status value. Must be one of: {', '.join(valid_statuses)}", 400)
             
-        tickets = query.offset((page - 1) * limit).limit(limit).all()
+        # Apply pagination
+        tickets, pagination = paginate_query(query, ServiceTicket, page, limit, sort_by, sort_order)
         
         # Imported here to avoid circular import!
         from application.blueprints.service_ticket.schemas import service_tickets_schema
-        return jsonify(service_tickets_schema.dump(tickets)), 200
+        return success_response(
+            data=service_tickets_schema.dump(tickets),
+            meta={"pagination": pagination}
+        )
 
     except Exception as e:
         db.session.rollback()
@@ -159,16 +161,13 @@ def get_my_tickets(customer_id):
 @customer_bp.route('/<int:customer_id>', methods=['PUT'])
 @limiter.limit('20 per hour')
 @token_required
-def update_customer(current_customer_id, customer_id):
-    query = select(Customer).where(Customer.id == customer_id)
-    customer = db.session.execute(query).scalars().first()
-    
-    if customer is None:
-        return error_response("Customer not found", 404)
-    
+def update_customer(user_id, customer_id):
     try:
+        customer = db.session.get(Customer, customer_id)    
+        if customer is None:
+            return error_response("Customer not found", 404)
+
         customer_data = customer_schema.load(request.json)
-        customer_data["email"] = customer_data["email"].lower().strip()
         
         existing = db.session.query(Customer).filter(Customer.email == customer_data["email"], Customer.id != customer_id).first()
         if existing:
@@ -178,7 +177,7 @@ def update_customer(current_customer_id, customer_id):
             setattr(customer, key, value)
             
         db.session.commit()
-        return jsonify(customer_schema.dump(customer))
+        return success_response(data=customer_schema.dump(customer))
     
     except ValidationError as err:
         return validation_error_response(err)
@@ -186,87 +185,85 @@ def update_customer(current_customer_id, customer_id):
         db.session.rollback()
         return error_response(str(e), 500)
     
-# PATCH
+#MARK: PATCH
 @customer_bp.route('/<int:customer_id>', methods=['PATCH'])
 @limiter.limit('20 per hour')
 @token_required
-def patch_customer(current_customer_id, customer_id): 
+def patch_customer(user_id, customer_id): 
     try:
-        customer = db.session.get(Customer, customer_id)
-        
+        customer = db.session.get(Customer, customer_id) 
         if customer is None:
             return error_response("Customer not found", 404)
         
         customer_data = customer_schema.load(request.json, partial=True) 
         
-        if "email" in customer_data:
-            customer_data["email"] = customer_data["email"].lower().strip()
-   
-        
         for key, value in customer_data.items():
+            if key == 'email':
+                existing = db.session.query(Customer).filter(Customer.email == value, Customer.id != customer_id).first()
+                if existing:
+                    return error_response("Email already taken", 400)
             setattr(customer, key, value)
             
         db.session.commit()
-        return jsonify(customer_schema.dump(customer)), 200  
+        return success_response(data=customer_schema.dump(customer))
     
     except ValidationError as err:
         return validation_error_response(err)
     except Exception as e:
         db.session.rollback()
-        return error_response(str(e), 500) 
-    
-# PATCH /update-password
+        return error_response(str(e), 500)
+
+# update password
 @customer_bp.route('/update-password', methods=['PATCH'])
 @token_required
-def update_password(customer_id):
+def update_password(user_id):
     try:
         data = request.get_json()
-        old_password = data.get('old_password')
-        new_password = data.get('new_password')
-
-        if not old_password or not new_password:
-            return error_response("Old and new passwords are required.", 400)
-
-        if not is_strong_password(new_password):
+        
+        if not data or 'current_password' not in data or 'new_password' not in data:
+            return error_response("Missing required fields", 400)
+        
+        customer = db.session.get(Customer, user_id)
+        if not customer:
+            return error_response("Customer not found", 404)
+        
+        # Verify current password
+        if not verify_password(customer.password, data['current_password']):
+            return error_response("Current password is incorrect", 401)
+        
+        # Check password strength
+        if not is_strong_password(data['new_password']):
             return error_response("Password must be at least 8 characters, including letters and numbers.", 400)
-
-        customer = db.session.get(Customer, customer_id)
-        if customer is None:
-            return error_response("Customer not found.", 404)
-
-        if not verify_password(customer.password, old_password):
-            return error_response("Old password is incorrect.", 401)
-
-        customer.password = hash_password(new_password)
+        
+        # Update password
+        customer.password = hash_password(data['new_password'])
         db.session.commit()
-
-        return jsonify({"message": "Password updated successfully."}), 200
+        
+        return success_response(message="Password updated successfully")
+    
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
     
-    
-# DELETE- toekn base
+#MARK: DELETE
 @customer_bp.route('/', methods=['DELETE']) # after adding token took out <int:customer_id>
 @limiter.limit('5 per hour')
 @token_required
 def delete_customer(customer_id):
     try:
-        query = select(Customer).where(Customer.id == customer_id)
-        customer = db.session.execute(query).scalars().first()
-        
-        if customer is None:
+        customer = db.session.get(Customer, customer_id)
+        if not customer:
             return error_response("Customer not found", 404)
         
+        # Check if customer has tickets
         if customer.tickets:
             return error_response("Cannot delete customer with active service tickets.", 400)
         
         db.session.delete(customer)
         db.session.commit()
         
-        # Note: For 204 responses, don't return a body as per HTTP standard
-        return "", 204
+        return success_response(message="Customer deleted successfully")
+    
     except Exception as e:
-        print("ROUTE ERROR:", str(e))
         db.session.rollback()
-        return error_response(str(e), 400)
+        return error_response(f"Error deleting customer: {str(e)}", 500)
