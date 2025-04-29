@@ -24,6 +24,3 @@ class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URI')
     DEBUG = False
     JWT_TOKEN_EXPIRY = 3600  # 1 hour for production
-
-class Constants:
-    TAX_RATE = 1.08  # 8% tax rate

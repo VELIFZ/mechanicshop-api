@@ -126,33 +126,14 @@ class TestCustomer(unittest.TestCase):
         self.assertIn('phone', response.get_json()['errors'])
 
     # -----GET-----
-    # 1- Get all customers
-    def test_get__customers(self):
-        response = self.client.get('/customers/')
-        self.assertEqual(response.status_code, 200)
-        response_data = response.get_json()
-        self.assertIn('data', response_data)
-        self.assertGreater(len(response_data['data']), 0)
-        self.assertIn('email', response_data['data'][0])
-        
-    # 2- Get single customer (authenticated route)
-    def test_get__single_customer(self):
-        # Get authorization token
-        headers = self.login_and_get_token()
-        response = self.client.get(f'/customers/{self.customer_id}', headers=headers)
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()['data']
-        self.assertEqual(data['name'], 'Test Customer')
-        self.assertEqual(data['email'], 'test@test.com')
-
-    # 3- Get my profile
+    # 1- Get my profile
     def test_get_my_profile(self):
         headers = self.login_and_get_token()
         response = self.client.get("/customers/me", headers=headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["data"]["email"], "test@test.com")
         
-    # 4- Get all tickets for a customer (authenticated route)
+    # 2- Get all tickets for a customer (authenticated route)
     def test_get_my_all_tickets(self):
         # Create a test ticket first
         with self.app.app_context():
@@ -185,7 +166,7 @@ class TestCustomer(unittest.TestCase):
         self.assertEqual(tickets[0]["vin"], "TESTTKT12345678")
         self.assertEqual(tickets[0]["work_summary"], "Test ticket")
 
-    # 5- Get tickets with status filter (authenticated route)
+    # 3- Get tickets with status filter (authenticated route)
     def test_get_my_tickets_with_status_filter(self):
         # Create tickets with different statuses
         with self.app.app_context():

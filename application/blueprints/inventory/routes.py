@@ -12,7 +12,7 @@ from application.extensions import cache
 
 # POST - Create inventory item
 @inventory_bp.route('/', methods=['POST'])
-@token_required
+@token_required(expected_role="employee")
 def create_inventory(user_id):
     try:
         inventory_data = inventory_schema.load(request.json)
@@ -83,7 +83,7 @@ def get_inventory_by_id(inventory_id):
     
 # PATCH 
 @inventory_bp.route('/<int:inventory_id>', methods=['PATCH'])
-@token_required
+@token_required(expected_role="employee")
 def update_inventory(user_id, inventory_id):
     try:
         inventory = db.session.get(Inventory, inventory_id)
@@ -105,7 +105,7 @@ def update_inventory(user_id, inventory_id):
 
 # DELETE -soft delete    
 @inventory_bp.route('/<int:inventory_id>', methods=['DELETE'])
-@token_required
+@token_required(expected_role="employee")
 def delete_inventory(user_id, inventory_id):
     try:
         inventory = db.session.get(Inventory, inventory_id)
@@ -128,7 +128,7 @@ def delete_inventory(user_id, inventory_id):
 #MARK: Serialized Part
 # POST
 @inventory_bp.route('/serialized-parts/', methods=['POST'])
-@token_required
+@token_required(expected_role="employee")
 def create_serialized_part(user_id):
     try:
         data = serialized_part_schema.load(request.json)
@@ -197,7 +197,7 @@ def get_serialized_parts_by_id(part_id):
 
 # PATCH but only status
 @inventory_bp.route('/serialized-parts/<int:part_id>', methods=['PATCH'])
-@token_required
+@token_required(expected_role="employee")
 def update_serialized_part_status(user_id, part_id):
     try:
         part = db.session.get(SerializedPart, part_id)
@@ -222,7 +222,7 @@ def update_serialized_part_status(user_id, part_id):
 
 # DELETE (soft delete) 
 @inventory_bp.route('/serialized-parts/<int:part_id>', methods=['DELETE'])
-@token_required
+@token_required(expected_role="employee")
 def delete_serialized_part(user_id, part_id):
     try:
         part = db.session.get(SerializedPart, part_id)

@@ -30,6 +30,8 @@ def create_app(config_name="development"):
     # Print the config to debug
     app.logger.info(f"Starting application in {config_name} mode")
     app.logger.info(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+    print(f"SECRET_KEY in app: {app.config['SECRET_KEY']}")
+
     
     # add extensions to app
     db.init_app(app)

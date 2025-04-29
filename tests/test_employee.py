@@ -1,7 +1,7 @@
 import unittest
 import uuid
 from application import create_app
-from application.models import db, Employee, ServiceTicket
+from application.models import db, Employee, ServiceTicket, Customer
 from application.utils.utils import hash_password
 
 STRONG_TEST_PASSWORD = "ValidTest123"
@@ -36,6 +36,16 @@ class TestEmployee(unittest.TestCase):
         db.session.add(self.employee)
         db.session.commit()
         self.employee_id = self.employee.id
+        
+        self.customer = Customer(
+            name='Test Customer',
+            email='testcustomer@test.com',
+            phone='1234567890',
+            password=hash_password('customerpassword')
+        )
+        db.session.add(self.customer)
+        db.session.commit()
+        self.customer_id = self.customer.id
         
         # Get auth token
         response = self.client.post('/employees/login', json={
@@ -185,7 +195,29 @@ class TestEmployee(unittest.TestCase):
         self.assertEqual(data["id"], self.employee_id)
         self.assertEqual(data["email"], self.test_email)
         
-    # 3- get non-exit employee
+    # 3- Get all customers
+    def test_get__customers(self):
+        headers = self.headers
+        response = self.client.get('/employees/customers', headers=headers)
+        self.assertEqual(response.status_code, 200)
+        
+        response_data = response.get_json()
+        self.assertIn('data', response_data)
+        self.assertGreater(len(response_data['data']), 0)
+        self.assertIn('email', response_data['data'][0])
+        
+    # 4- Get single customer (authenticated route)
+    def test_get__single_customer(self):
+        # Get authorization token
+        headers = self.headers
+        response = self.client.get(f'/employees/customers/{self.customer_id}', headers=headers)
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()['data']
+        self.assertEqual(data['name'], 'Test Customer')
+        self.assertEqual(data['email'], 'testcustomer@test.com')
+        
+    # 5- get non-exit employee
     def test_get_nonexistent_employee(self):
         response = self.client.get('/employees/8888', headers=self.headers)
         self.assertEqual(response.status_code, 404)
@@ -193,7 +225,7 @@ class TestEmployee(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["message"], "Employee not found")
         
-    # 4- get mechanics by ticket count
+    # 6- get mechanics by ticket count
     def test_get_mechanics_by_ticket_count(self):
         # Create test mechanics
         mechanic1 = Employee(
@@ -320,6 +352,25 @@ class TestEmployee(unittest.TestCase):
             self.assertEqual(updated_employee.phone, "2223334455")
             self.assertEqual(updated_employee.role, "manager")
         
+    # 2- patch a customer by employee 
+    def test_patch_customer_as_employee(self):
+        payload = {
+            "phone": "9876543210",
+            "name": "Updated Customer Name"
+        }
+        response = self.client.patch(f'/employees/customers/{self.customer_id}', json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+
+        data = response.get_json()["data"]
+        self.assertEqual(data["phone"], "9876543210")
+        self.assertEqual(data["name"], "Updated Customer Name")
+
+        # Confirm in DB
+        with self.app.app_context():
+            updated_customer = db.session.get(Customer, self.customer_id)
+            self.assertEqual(updated_customer.phone, "9876543210")
+            self.assertEqual(updated_customer.name, "Updated Customer Name")
+            
     # ------- Delete Tests -------
     # 1- delete by id
     def test_delete_employee(self):

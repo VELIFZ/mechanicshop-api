@@ -7,9 +7,7 @@ from functools import wraps
 from flask import request, jsonify
 from flask import current_app
 from decimal import Decimal
-from sqlalchemy.orm import Query
 from application.models import db
-
 
 # MARK: Response Formatting
 def error_response(message, status_code=400, details=None):
@@ -139,35 +137,44 @@ def encode_token(user_id, user_type):
     token = jwt.encode(payload, secret, algorithm='HS256')
     return token 
 
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            
+def token_required(expected_role=None):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            auth_header = request.headers.get('Authorization', None)
+            if not auth_header:
+                return jsonify({'message': 'Authorization header is required'}), 401
+
             # Check if Authorization header has the correct format
             if not auth_header.startswith('Bearer '):
                 return jsonify({'message': 'Invalid authorization format. Use Bearer token'}), 401
-                
+
             token = auth_header.split()[1]
-            
-            if not token:
-                return jsonify({'message': 'Missing token'}), 401
+                
             try:
-                data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+                secret = current_app.config['SECRET_KEY']
+                data = jwt.decode(token, secret, algorithms=['HS256'])
                 user_id = data['sub']
+                role = data['role']
+                
+                # save role to request object for later use
+                request.user_role = role
+                
+                # Role checking
+                if expected_role and role != expected_role:
+                    return jsonify({"message": "Forbidden - invalid role"}), 403
+
             except jwt.ExpiredSignatureError:
                 return jsonify({"message": "Token has expired. Please log in again"}), 401
             except jwt.InvalidTokenError:
                 return jsonify({"message": "Invalid token"}), 401
+            except Exception as e:
+                return jsonify({"message": f"Token validation error: {str(e)}"}), 401
             
             return f(user_id, *args, **kwargs)
-        
-        else:
-            return jsonify({'message': 'Authorization header is required'}), 401
-        
-    return decorated
+        return decorated
+    decorator.__name__ = f"token_required_{expected_role or 'any'}"
+    return decorator
 
 # MARK: Query Helpers
 def apply_filters(query, model, filter_params):

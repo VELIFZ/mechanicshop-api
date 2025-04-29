@@ -1,15 +1,14 @@
 from flask import request, jsonify
 from . import service_bp
 from marshmallow import ValidationError
-from application.utils.utils import validation_error_response, error_response, token_required
+from application.utils.utils import validation_error_response, error_response, token_required, get_pagination_params
 from sqlalchemy import select
 from application.models import Service, db
 from application.blueprints.service_.schemas import service_schema, services_schema
 from application.extensions import cache, limiter
 
-
 @service_bp.route("/", methods=["POST"])
-@token_required
+@token_required(expected_role="employee")
 def create_service(user_id):
     try:
         service_data = service_schema.load(request.json)
@@ -38,8 +37,7 @@ def create_service(user_id):
 @cache.cached(timeout=60)
 def get_all_services():
     try:
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
+        page, limit, sort_by, sort_order = get_pagination_params()
         service_type_filter = request.args.get('service_type')
 
         query = db.session.query(Service)
@@ -47,8 +45,20 @@ def get_all_services():
         if service_type_filter:
             query = query.filter(Service.service_type.ilike(f"%{service_type_filter}%"))
 
+        if sort_by not in ["id", "service_type", "base_price"]:
+            return error_response("Invalid sort_by field", 400)
+
+        sort_attr = getattr(Service, sort_by, Service.id)
+
+        if sort_order.lower() == 'desc':
+            query = query.order_by(sort_attr.desc())
+        else:
+            query = query.order_by(sort_attr.asc())
+
         services = query.offset((page - 1) * limit).limit(limit).all()
+
         return jsonify(services_schema.dump(services)), 200
+
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
@@ -63,7 +73,7 @@ def get_single_service(service_id):
 
 # UPDATE
 @service_bp.route('/<int:service_id>', methods=['PUT'])
-@token_required
+@token_required(expected_role="employee")
 def update_service(user_id, service_id):
     try:
         service_data = service_schema.load(request.json)
@@ -87,7 +97,7 @@ def update_service(user_id, service_id):
     
 # PATCH
 @service_bp.route('/<int:service_id>', methods=['PATCH'])
-@token_required
+@token_required(expected_role="employee")
 def partially_update_service(user_id, service_id):
     try:
         service = db.session.get(Service, service_id)
@@ -114,7 +124,7 @@ def partially_update_service(user_id, service_id):
               
 # DELETE
 @service_bp.route('/<int:service_id>', methods=['DELETE'])
-@token_required
+@token_required(expected_role="employee")
 def delete_service(user_id, service_id):
     
     query = select(Service).where(Service.id == service_id)

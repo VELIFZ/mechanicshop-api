@@ -65,58 +65,15 @@ def create_customer():
         return error_response(str(e), 500)
 
 #MARK: GET
-# get curtomer with Pagination, Filter, and Sort
-@customer_bp.route('/', methods=['GET'])
-@cache.cached(timeout=60)
-def get_customers():
-    try:
-        page, limit, sort_by, sort_order = get_pagination_params()
-        
-        # Start with base query
-        query = db.session.query(Customer)
-        
-        # Apply filters
-        filter_params = {
-            'name': request.args.get('name'),
-            'email': request.args.get('email')
-        }
-        query = apply_filters(query, Customer, filter_params)
-        
-        # Apply pagination
-        customers, pagination = paginate_query(query, Customer, page, limit, sort_by, sort_order)
 
-        return success_response(
-            data=customers_schema.dump(customers),
-            meta={"pagination": pagination}
-        )
 
-    except Exception as e:
-        db.session.rollback()
-        return error_response(str(e), 500)
-    
-# ---get by ID---
-@customer_bp.route('/<int:id>', methods=['GET'])
-@token_required
-def get_customer(customer_id, id):   
-    try:
-        query = select(Customer).where(Customer.id == id)
-        customer = db.session.execute(query).scalars().first()
-        
-        if not customer:
-            return error_response("Customer not found", 404)
-        
-        return success_response(data=customer_schema.dump(customer))
-    
-    except Exception as e:
-        db.session.rollback()
-        return error_response(str(e), 500)
 
 # --- profile /me---
 @customer_bp.route('/me', methods=['GET'])
 @limiter.limit("10 per minute")
-@token_required
-def get_my_profile(customer_id):
-    customer = db.session.get(Customer, customer_id)
+@token_required(expected_role="customer")
+def get_my_profile(user_id):
+    customer = db.session.get(Customer, user_id)
     if customer is None:
         return error_response("Customer not found", 404)
     return success_response(data=customer_schema.dump(customer))
@@ -124,13 +81,13 @@ def get_my_profile(customer_id):
 
 # ---my tickets with pagination---
 @customer_bp.route('/me/tickets', methods=['GET'])
-@token_required
-def get_my_tickets(customer_id):
+@token_required(expected_role="customer")
+def get_my_tickets(user_id):
     try:
         page, limit, sort_by, sort_order = get_pagination_params()
         
         # Base query filtered by customer_id
-        query = db.session.query(ServiceTicket).filter(ServiceTicket.customer_id == customer_id)
+        query = db.session.query(ServiceTicket).filter(ServiceTicket.customer_id == user_id)
         
         # Additional status filter if provided
         status = request.args.get('status')
@@ -155,14 +112,16 @@ def get_my_tickets(customer_id):
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
-    
 
 # PUT
 @customer_bp.route('/<int:customer_id>', methods=['PUT'])
 @limiter.limit('20 per hour')
-@token_required
+@token_required(expected_role="customer")
 def update_customer(user_id, customer_id):
     try:
+        if int(user_id) != customer_id:
+            return error_response("Unauthorized to update this profile", 403)
+        
         customer = db.session.get(Customer, customer_id)    
         if customer is None:
             return error_response("Customer not found", 404)
@@ -188,9 +147,12 @@ def update_customer(user_id, customer_id):
 #MARK: PATCH
 @customer_bp.route('/<int:customer_id>', methods=['PATCH'])
 @limiter.limit('20 per hour')
-@token_required
+@token_required(expected_role="customer")
 def patch_customer(user_id, customer_id): 
     try:
+        if int(user_id) != customer_id:
+            return error_response("Unauthorized to update this profile", 403)
+        
         customer = db.session.get(Customer, customer_id) 
         if customer is None:
             return error_response("Customer not found", 404)
@@ -215,7 +177,7 @@ def patch_customer(user_id, customer_id):
 
 # update password
 @customer_bp.route('/update-password', methods=['PATCH'])
-@token_required
+@token_required(expected_role="customer")
 def update_password(user_id):
     try:
         data = request.get_json()
@@ -239,6 +201,11 @@ def update_password(user_id):
         customer.password = hash_password(data['new_password'])
         db.session.commit()
         
+        print("customer password (hashed):", customer.password)
+        print("current_password (input):", data['current_password'])
+        print("verify_password result:", verify_password(customer.password, data['current_password']))
+
+        
         return success_response(message="Password updated successfully")
     
     except Exception as e:
@@ -248,10 +215,10 @@ def update_password(user_id):
 #MARK: DELETE
 @customer_bp.route('/', methods=['DELETE']) # after adding token took out <int:customer_id>
 @limiter.limit('5 per hour')
-@token_required
-def delete_customer(customer_id):
+@token_required(expected_role="customer")
+def delete_customer(user_id):
     try:
-        customer = db.session.get(Customer, customer_id)
+        customer = db.session.get(Customer, user_id)
         if not customer:
             return error_response("Customer not found", 404)
         

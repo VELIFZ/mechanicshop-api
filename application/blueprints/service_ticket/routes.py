@@ -13,7 +13,7 @@ from marshmallow import ValidationError
 
 # POST - create a new service ticket
 @service_ticket_bp.route('/', methods=['POST'])
-@token_required
+@token_required(expected_role="employee")
 def create_service_ticket(user_id):
     try:
         data = request.get_json()
@@ -125,7 +125,7 @@ def get_ticket(id):
 
 # PATCH - partial update a service ticket
 @service_ticket_bp.route("/<int:id>", methods=["PATCH"])
-@token_required
+@token_required(expected_role="employee")
 def update_service_ticket(user_id, id):
     ticket = db.session.get(ServiceTicket, id)
     if not ticket or ticket.is_deleted:
@@ -211,7 +211,7 @@ def update_service_ticket(user_id, id):
 
 # DELETE (soft) - saved for audit and whatever needed
 @service_ticket_bp.route("/<int:id>", methods=["DELETE"])
-@token_required
+@token_required(expected_role="employee")
 def soft_delete_service_ticket(user_id, id):
     ticket = db.session.get(ServiceTicket, id)
     if not ticket or ticket.is_deleted:
