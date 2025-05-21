@@ -78,6 +78,7 @@ def create_service_ticket(user_id):
 
 #GET - get all service tickets
 @service_ticket_bp.route("/", methods=["GET"])
+@token_required(expected_role="employee")
 @cache.cached(timeout=60)
 def get_all_tickets():
     try:

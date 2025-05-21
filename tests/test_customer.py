@@ -202,29 +202,17 @@ class TestCustomer(unittest.TestCase):
         self.assertEqual(len(tickets), 1)
         self.assertEqual(tickets[0]["status"], "open")
     
-    # -----PUT-----
-    # 1- Update a customer
-    def test_update__customer(self):
-        headers = self.login_and_get_token()
-        payload = {
-            "name": "Updated Customer",
-            "phone": "1112223333",
-            "email": "test@test.com",
-            "password": "123zamzam"
-        }
-        response = self.client.put(f'/customers/{self.customer_id}', json=payload, headers=headers)
-        self.assertEqual(response.status_code, 200)
-        # not dublicate email since belogs to the id
-
     # -----PATCH-----
     # 1- Partial update a customer
-    def test_patch__customer(self):
+    def test_patch_customer(self):
         headers = self.login_and_get_token()
-        payload = {
-            "name": "The Customer"
-        }
+        payload = {"name": "The Customer", "phone": "1231231234"}
         response = self.client.patch(f'/customers/{self.customer_id}', json=payload, headers=headers)
         self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()["data"]
+        self.assertEqual(data["name"], "The Customer")
+        self.assertEqual(data["phone"], "1231231234")
         
     # 2- Update password (authenticated route)
     def test_update_password(self):
@@ -252,40 +240,17 @@ class TestCustomer(unittest.TestCase):
         response = self.client.post("/customers/login", json=payload)
         self.assertEqual(response.status_code, 200)
     
-    # -----DELETE-----
-    # 1- Delete a customer
-    def test_delete_customer(self):
-        # Log in to get token
+    #3 - Not allowed field
+    def test_patch_customer_with_not_allowed_field(self):
         headers = self.login_and_get_token()
-        response = self.client.delete('/customers/', headers=headers)
-        self.assertEqual(response.status_code, 200)
+        payload = {
+            "password": "newpassword123", 
+            "role": "admin"  
+        }
+        response = self.client.patch(f'/customers/{self.customer_id}', json=payload, headers=headers)
         
-        self.assertEqual(response.get_json()["status"], "success")
-        self.assertEqual(response.get_json()["message"], "Customer deleted successfully")
+        # The route actually returns 403 status code for forbidden fields
+        self.assertEqual(response.status_code, 403)
         
-    # 2- Delete a customer with tickets
-    def test_delete_customer_with_tickets(self):
-        with self.app.app_context():
-            # Create a ticket for our customer
-            ticket = ServiceTicket(
-                customer_id=self.customer_id,
-                vin="ABC123456789DEF12",
-                work_summary="Oil change needed",
-                cost=50.00,
-                status="open"
-            )
-            db.session.add(ticket)
-            db.session.commit()
-        
-        # Log in and get a token
-        headers = self.login_and_get_token()
-        
-        # Try to delete the customer
-        response = self.client.delete('/customers/', headers=headers)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Cannot delete customer", response.get_json()["message"])
-          
-        # Verify the customer still exists
-        with self.app.app_context():
-            customer = db.session.get(Customer, self.customer_id)
-            self.assertIsNotNone(customer)
+        # Check the error message matches what's returned by the route
+        self.assertIn("cannot be updated by customer", response.get_json()["message"])

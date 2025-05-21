@@ -40,6 +40,10 @@ def create_inventory(user_id):
 def get_inventory():
     try:
         page, limit, sort_by, sort_order = get_pagination_params()
+        valid_sort_fields = ["id", "inventory_number", "name", "price", "quantity_in_stock"]
+        if sort_by and sort_by not in valid_sort_fields:
+            return error_response("Invalid sort_by field", 400)
+
         deleted_filter = request.args.get("deleted") == "true"
         
         # Start with base query
@@ -228,6 +232,10 @@ def delete_serialized_part(user_id, part_id):
         part = db.session.get(SerializedPart, part_id)
         if not part:
             return error_response("Serialized part not found", 404)
+        
+        if part.is_deleted:
+            return error_response("Serialized part is already deleted", 400)
+
         
         part.is_deleted = True
         db.session.commit()

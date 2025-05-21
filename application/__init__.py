@@ -8,6 +8,20 @@ from application.blueprints.employee import employee_bp
 from application.blueprints.service_ticket import service_ticket_bp
 from application.blueprints.inventory import inventory_bp
 from application.blueprints.service_ import service_bp
+from flask_swagger_ui import get_swaggerui_blueprint
+from werkzeug.exceptions import BadRequest
+from application.utils.utils import error_response
+
+SWAGGER_URL = '/api/docs'  # set the endpoint for documentation
+API_URL = '/static/swagger.yaml'  # Our API URL (grab local host)
+
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={
+        'app_name': "Mechanic Shop API"
+    }
+)
 
 def create_app(config_name="development"):
     
@@ -46,6 +60,7 @@ def create_app(config_name="development"):
     app.register_blueprint(service_ticket_bp, url_prefix='/service-tickets')
     app.register_blueprint(inventory_bp, url_prefix='/inventory')
     app.register_blueprint(service_bp, url_prefix='/services')
+    app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL) 
     
     # Error handlers for production
     if config_name == "production":
@@ -56,6 +71,11 @@ def create_app(config_name="development"):
         @app.errorhandler(404)
         def handle_not_found(e):
             return jsonify({"error": "Resource not found"}), 404
+    
+    # Register error handlers
+    @app.errorhandler(BadRequest)
+    def handle_bad_request(e):
+        return error_response("Invalid or malformed JSON", 400)
     
     with app.app_context():
         db.create_all()

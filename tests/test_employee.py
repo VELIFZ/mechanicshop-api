@@ -186,13 +186,13 @@ class TestEmployee(unittest.TestCase):
         
     # 2- Single fetch by id
     def test_get_employee_by_id(self):
-        response = self.client.get(f'/employees/{self.employee_id}', headers=self.headers)
+        response = self.client.get(f'/employees/{self.id}', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         
         response_data = response.get_json()
         self.assertIn("data", response_data)
         data = response_data["data"]
-        self.assertEqual(data["id"], self.employee_id)
+        self.assertEqual(data["id"], self.id)
         self.assertEqual(data["email"], self.test_email)
         
     # 3- Get all customers

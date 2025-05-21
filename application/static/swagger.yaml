@@ -1,0 +1,3047 @@
+#app/static/swagger.yaml
+
+swagger: '2.0'
+info:
+  title: "Mechanic Shop API"
+  description: "API for managing a mechanic shop, including customers, employees, service tickets, inventory, and services"
+  version: "1.0.0"
+host: "127.0.0.1:5000"
+schemes:
+  - "http"
+consumes:
+  - "application/json"
+produces:
+  - "application/json"
+
+securityDefinitions: 
+  bearerAuth: # name of the security scheme
+    type: apiKey
+    name: Authorization
+    in: header
+    description: "JWT token, prefixed with 'Bearer '"
+
+parameters:
+  PageParam:
+    name: page
+    in: query
+    type: integer
+    required: false
+    default: 1
+
+  LimitParam:
+    name: limit
+    in: query
+    type: integer
+    required: false
+    default: 10
+
+  SortByParam:
+    name: sort_by
+    in: query
+    type: string
+    required: false
+
+  SortOrderParam:
+    name: sort_order
+    in: query
+    type: string
+    enum: [asc, desc]
+    required: false
+
+  StatusParam:
+    name: status
+    in: query
+    type: string
+    enum: [open, in_progress, closed]
+    required: false
+
+  NameParam:
+    name: name
+    in: query
+    type: string
+    required: false
+  
+  EmailParam:
+    name: email
+    in: query
+    type: string
+    required: false
+
+  RoleParam:
+    name: role
+    in: query
+    type: string
+    enum: [mechanic, manager, admin]
+    required: false
+
+  SearchParam:
+    name: search
+    in: query
+    type: string
+    required: false
+
+
+paths:
+#MARK: customers paths
+  /customers/login:
+    post:
+      tags:
+        - Customer
+      summary: "Customer login (generates token)"
+      description: "Logs in a customer using email and password. generates and return a customer specific token. Rate limited to 3 requests per 10 minutes."
+      parameters:
+        - in: body
+          name: body
+          description: "Login Credentials"
+          required: true
+          schema:
+            $ref: "#/definitions/LoginCredentials"
+      responses:
+        200:
+          description: "Login successful"
+          schema:
+            $ref: "#/definitions/LoginSuccessResponse"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+            example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 10 minute</p>"
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>3 per 10 minute</p>
+
+  /customers:
+    post:
+      tags:
+        - Customer
+      summary: "Create new customer"
+      description: "Registers a new customer. Rate limited to 3 requests per hour."
+      parameters:
+        - in: body
+          name: customer
+          description: "Information required to create a new Customer."
+          required: true
+          schema:
+            $ref: "#/definitions/CreateCustomerPayload"
+      responses:
+        201:
+          description: "Customer created successfully"
+          schema:
+            $ref: "#/definitions/CreateCustomerResponse"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        409:
+          description: "Email already exists"
+          schema:
+            $ref: "#/definitions/CustomerConflictResponse"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>3 per 1 hour</p>
+        500:
+          $ref: "#/definitions/ServerErrorResponse"
+
+  /customers/me:
+    get:
+      tags:
+        - Customer
+      summary: "Get current authenticated customer's profile"
+      description: "Returns the profile of the authenticated customer using their JWT token. Rate limit: 10 requests per minute per user."
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Customer profile retrieved successfully"
+          schema:
+            $ref: "#/definitions/CustomerSuccessResponse"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden - invalid role"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Not found"
+          schema:
+            $ref: "#/definitions/NotFoundResponse"
+        429:
+          description: "Too Many Requests"
+          schema:
+            $ref: "#/definitions/RateLimitResponse"
+
+  /customers/me/tickets:
+    get:
+      tags:
+        - Customer
+      summary: "Get current customer's service tickets"
+      description: "Returns the authenticated customer's service tickets with pagination and optional status filtering."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - $ref: "#/parameters/StatusParam"
+      responses:
+        200:
+          description: "Tickets retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              message:
+                type: string
+              data:
+                type: array
+                items:
+                  $ref: "#/definitions/CreateServiceTicketResponse"
+              meta:
+                $ref: "#/definitions/PaginationMeta"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+
+  /customers/{customer_id}:
+    patch:
+      tags:
+        - Customer
+      summary: "Update customer's basic information"
+      description: "Updates name, email, or phone of the authenticated customer. Rate limited to 20 requests per hour. Only the authenticated customer can update their own profile"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the customer to update (must match authenticated user)"
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/UpdateCustomerPayload"
+      responses:
+        200:
+          description: "Customer updated successfully"
+          schema:
+            $ref: "#/definitions/CustomerSuccessResponse"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Not found"
+          schema:
+            $ref: "#/definitions/NotFoundResponse"
+        422:
+          description: "Unprocessable Entity"
+          schema:
+            $ref: "#/definitions/UnprocessableEntityResponse"
+        429:
+          description: "Too Many Requests"
+          schema:
+            $ref: "#/definitions/RateLimitResponse"
+
+  /customers/me/update-password:
+    patch:
+      tags:
+        - Customer
+      summary: "Update customer's password"
+      description: "Updates the authenticated customer's password after verifying the current password."
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/PasswordUpdatePayload"
+      responses:
+        200:
+          description: "Password updated successfully"
+          schema:
+            $ref: "#/definitions/SuccessResponse"
+        400:
+          description: "Validation error"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Missing required fields"
+            examples:
+              missing_fields:
+                status: "error"
+                message: "Missing required fields"
+              invalid_password:
+                status: "error"
+                message: "Password must be at least 8 characters, including letters and numbers."
+        401:
+          description: "Current password incorrect"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Current password is incorrect"
+        403:
+          description: "Forbidden - invalid role"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          $ref: "#/definitions/NotFoundResponse"
+
+#MARK: employees paths
+  /employees/login:
+    post:
+      tags:
+        - Employee
+      summary: "Employee login (generates token)"
+      description: "Authenticates an employee using their employee ID and password. Returns a JWT token for subsequent requests."
+      parameters:
+        - in: body
+          name: body
+          description: "Employee Login Credentials"
+          required: true
+          schema:
+            $ref: "#/definitions/LoginCredentials"
+      responses:
+        200:
+          description: "Login successful"
+          schema:
+            $ref: "#/definitions/LoginResponse"
+          examples:
+            application/json:
+              status: "success"
+              message: "Successfully logged in"
+              data:
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        400:
+          description: "Validation error"
+          examples:
+            application/json:
+              errors:
+                email: ["Not a valid email address.", "Invalid email format"]
+              message: "Invalid input"
+        401:
+          description: "Invalid credentials"
+          examples:
+            application/json:
+              message: "Invalid email or password"
+              status: "error"
+        403:
+          description: "Account disabled"
+          examples:
+            application/json:
+              error: "Employee account has been disabled"
+        500:
+          description: "Server error"
+          examples:
+            application/json:
+              error: "Internal server error"
+
+  /employees:
+    post:
+      tags:
+        - Employee
+      summary: "Create a new employee"
+      description: |
+        Creates a new employee account.
+        Rate limited to 3 requests per hour.
+        Password must be at least 8 characters, including letters and numbers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: body
+          name: body
+          description: "Employee creation payload"
+          required: true
+          schema:
+            $ref: "#/definitions/CreateEmployeePayload"
+      responses:
+        201:
+          description: "Employee created successfully"
+          schema:
+            $ref: "#/definitions/CreateEmployeeResponse"
+          examples:
+            application/json:
+              status: "success"
+              message: "Employee created successfully"
+              data:
+                id: 1
+                name: "John Smith"
+                email: "john.smith@example.com"
+                phone: "1234567890"
+                role: "mechanic"
+                salary: 60000.00
+        409:
+          description: "Email already exists"
+          schema:
+            $ref: "#/definitions/EmployeeConflictResponse"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+            example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 1 hour</p>"
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>3 per 1 hour</p>
+        500:
+          description: "Server error"
+          examples:
+            application/json:
+              error: "Internal server error"
+    
+    get:
+      tags:
+        - Employee
+      summary: "Get all employees"
+      description: "Returns a paginated, filterable, and sortable list of employees. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam" 
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - $ref: "#/parameters/NameParam"
+        - $ref: "#/parameters/EmailParam"
+        - $ref: "#/parameters/RoleParam"
+        - $ref: "#/parameters/SearchParam"
+      responses:
+        200:
+          description: "Employees retrieved successfully"
+          schema:
+            $ref: "#/definitions/GetEmployeesResponse"
+        400:
+          description: "Invalid query parameter"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Invalid query parameter"
+          examples:
+            application/json:
+              status: "error"
+              message: "Invalid query parameter"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+          examples:
+            application/json:
+              message: "Forbidden - invalid role"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/customers:
+    get:
+      tags:
+        - Employee
+      summary: "Get all customers"
+      description: "Admin/employee view of all customers with pagination, filtering, sorting, and search."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - $ref: "#/parameters/NameParam"
+        - $ref: "#/parameters/EmailParam"
+        - $ref: "#/parameters/SearchParam"
+      responses:
+        200:
+          description: "Customers retrieved successfully"
+          schema:
+            $ref: "#/definitions/GetCustomersResponse"
+        400:
+          description: "Invalid query parameter"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Invalid query parameter"
+          examples:
+            application/json:
+              status: "error"
+              message: "Invalid query parameter"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/{id}:
+    get:
+      tags:
+        - Employee
+      summary: "Get employee by ID"
+      description: "Returns a specific employee by ID. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the employee to retrieve"
+      responses:
+        200:
+          description: "Employee retrieved successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/EmployeeProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                id: 1
+                name: "mike"
+                email: "mike@gmail.com"
+                phone: "4056098723"
+                role: "mechanic"
+                salary: "123.00"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Employee not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Employee not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+    put:
+      tags:
+        - Employee
+      summary: "Update employee"
+      description: "Updates an employee's information. Requires all fields (name, email, phone, role, salary). Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the employee to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/UpdateEmployeePayload"
+      responses:
+        200:
+          description: "Employee updated successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/EmployeeProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                email: "janemechanic@example.com"
+                id: 4
+                name: "Jane Mechanic Queen"
+                phone: "1234567890"
+                role: "mechanic"
+                salary: "60000.00"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+          examples:
+            missing_field:
+              errors:
+                role: ["Missing data for required field."]
+              message: "Invalid input"
+            invalid_email:
+              errors:
+                email: ["Not a valid email address.", "Invalid email format"]
+              message: "Invalid input"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Employee not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Employee not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+  
+    patch:
+      tags:
+        - Employee
+      summary: "Partially update employee"
+      description: "Updates just the provided fields of an employee's information. Allows partial updates. Requires employee token. Password will be hashed if provided."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the employee to update"
+        - in: body
+          name: body
+          required: true
+          description: "Fields to update. Leave empty to return existing profile."
+          schema:
+            $ref: "#/definitions/PatchEmployeePayload"
+      responses:
+        200:
+          description: "Employee updated successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/EmployeeProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                email: "janemechanic@example.com"
+                id: 4
+                name: "Jane Mechanic Queen"
+                phone: "1234567890"
+                role: "mechanic"
+                salary: "60000.00"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+          examples:
+            invalid_email:
+              errors:
+                email: ["Not a valid email address.", "Invalid email format"]
+              message: "Invalid input"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+          examples:
+            application/json:
+              message: "You are not allowed to update role"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Employee not found"
+              status:
+                type: string
+                example: "error"
+          examples:
+            application/json:
+              message: "Employee not found"
+              status: "error"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+    delete:
+      tags:
+        - Employee
+      summary: "Delete employee"
+      description: "Permanently removes an employee. Rate limited to 5 requests per hour. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the employee to delete"
+      responses:
+        200:
+          description: "Employee deleted successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Employee deleted successfully"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Employee not found"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+            example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>5 per 1 hour</p>"
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>5 per 1 hour</p>
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/customers/{customer_id}:
+    get:
+      tags:
+        - Employee
+      summary: "Get customer by ID"
+      description: "Returns a specific customer by ID. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the customer to retrieve"
+      responses:
+        200:
+          description: "Customer retrieved successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/CustomerProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                id: 1
+                name: "zambak"
+                email: "zamzam@gmail.com"
+                phone: "2908763453"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Customer not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Customer not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Customer not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+    
+    patch:
+      tags:
+        - Employee
+      summary: "Update customer as employee"
+      description: "Allows an employee to update a customer's information. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the customer to update"
+        - in: body
+          name: body
+          required: true
+          description: "Fields to update. Leave empty to return existing profile."
+          schema:
+            $ref: "#/definitions/UpdateCustomerPayload"
+      responses:
+        200:
+          description: "Customer updated successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/CustomerProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                email: "lily@gmail.com"
+                id: 4
+                name: "lilybun"
+                phone: "5457897583"
+        400:
+          description: "Validation error"
+          schema:
+            $ref: "#/definitions/ValidationErrorResponse"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Customer not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Customer not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Customer not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/me:
+    get:
+      tags:
+        - Employee
+      summary: "Get current employee's profile"
+      description: "Returns the profile of the authenticated employee. Rate limited to 10 requests per minute."
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Employee profile retrieved successfully"
+          schema:
+            allOf:
+              - $ref: "#/definitions/BaseSuccessResponse"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/definitions/EmployeeProfileData"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                id: 4
+                name: "Jane Mechanic Queen"
+                email: "janemechanic@example.com"
+                phone: "1234567890"
+                role: "mechanic"
+                salary: "66000.00"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Employee not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Employee not found"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+            example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>10 per 1 minute</p>"
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>10 per 1 minute</p>
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/me/tickets:
+    get:
+      tags:
+        - Employee
+      summary: "Get current employee's service tickets"
+      description: "Returns service tickets assigned to the authenticated employee with pagination, sorting, and filtering options. Rate limited to 10 requests per minute."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - $ref: "#/parameters/StatusParam"
+      responses:
+        200:
+          description: "Service tickets retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              meta:
+                $ref: "#/definitions/PaginationMeta"
+              data:
+                type: array
+                items:
+                  $ref: "#/definitions/CreateServiceTicketResponse"
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              meta:
+                pagination:
+                  has_next: false
+                  has_prev: false
+                  limit: 10
+                  page: 1
+                  total_items: 3
+                  total_pages: 1
+              data:
+                - id: 2
+                  closed_at: "2025-04-20T00:45:23.330793"
+                  cost: 116.58
+                  created_at: "2025-04-20T00:45:23.344572"
+                  customer:
+                    email: "zamzam@gmail.com"
+                    id: 1
+                    name: "zambak"
+                  employees:
+                    - id: 1
+                      name: "mike"
+                      role: "mechanic"
+                  is_deleted: false
+                  serialized_parts:
+                    - id: 1
+                      inventory:
+                        desc: "Front brake pad set"
+                        id: 3
+                        inventory_number: "BP-123"
+                        name: "Brake Pad"
+                        price: "59.99"
+                      serial_number: "SP-001"
+                      status: "defective"
+                  services:
+                    - base_price: "49.99"
+                      id: 1
+                      service_type: "Brake Check"
+                  status: "closed"
+                  vin: "1HGCM82633A004352"
+                  work_summary: "Brake replacement and oil change"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Employee not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Employee not found"
+          examples:
+            application/json:
+              status: "error"
+              message: "Employee not found"
+        429:
+          description: "Too Many Requests"
+          produces:
+            - text/html
+          schema:
+            type: string
+            example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>10 per 1 minute</p>"
+          examples:
+            text/html: |
+              <!doctype html>
+              <html lang=en>
+              <title>429 Too Many Requests</title>
+              <h1>Too Many Requests</h1>
+              <p>10 per 1 minute</p>
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /employees/by-ticket-count:
+    get:
+      tags:
+        - Employee
+      summary: "Get mechanics ranked by ticket count"
+      description: "Returns a list of employees ordered by the number of service tickets they're assigned to."
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Employees retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    name:
+                      type: string
+                      example: "mike"
+                    ticket_count:
+                      type: integer
+                      example: 3
+          examples:
+            application/json:
+              status: "success"
+              message: "Operation successful"
+              data:
+                - id: 1
+                  name: "mike"
+                  ticket_count: 3
+                - id: 3
+                  name: "lilo"
+                  ticket_count: 2
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+#MARK: inventory paths 
+  /inventory:
+    post:
+      tags:
+        - Inventory
+      summary: "Create new inventory item"
+      description: "Creates a new inventory item with the provided details. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CreateInventoryPayload"
+      responses:
+        201:
+          description: "Inventory item created successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Inventory item created successfully"
+              data:
+                $ref: "#/definitions/InventoryItem"
+        400:
+          description: "Validation error or duplicate inventory number"
+          schema:
+            oneOf:
+              - $ref: "#/definitions/ValidationErrorResponse"
+              - type: object
+                properties:
+                  status:
+                    type: string
+                    example: "error"
+                  message:
+                    type: string
+                    example: "This inventory number already exists."
+                  details:
+                    type: object
+                    properties:
+                      inventory_number:
+                        type: array
+                        items:
+                          type: string
+                        example: ["This inventory number already exists."]
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden - invalid role"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+    get:
+      tags:
+        - Inventory
+      summary: "Get inventory items"
+      description: "Returns a paginated, filterable list of inventory items. Can filter for deleted or active items."
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - name: sort_by
+          in: query
+          type: string
+          required: false
+          enum: [id, inventory_number, name, price, quantity_in_stock]
+          description: "Field to sort by. Must be one of the allowed values."
+        - $ref: "#/parameters/SortOrderParam"
+        - name: deleted
+          in: query
+          type: boolean
+          required: false
+          description: "Filter for deleted items (true) or active items (false/not provided)"
+        - name: inventory_number
+          in: query
+          type: string
+          required: false
+          description: "Filter by inventory number"
+        - name: part_name
+          in: query
+          type: string
+          required: false
+          description: "Filter by part name"
+      responses:
+        200:
+          description: "Inventory items retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              meta:
+                $ref: "#/definitions/PaginationMeta"
+              data:
+                type: array
+                items:
+                  $ref: "#/definitions/InventoryItem"
+        400:
+          description: "Invalid sort_by field"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Invalid sort_by field"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /inventory/{inventory_id}:
+    get:
+      tags:
+        - Inventory
+      summary: "Get inventory item by ID"
+      description: "Returns a single inventory item by its ID"
+      parameters:
+        - name: inventory_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the inventory item to retrieve"
+      responses:
+        200:
+          description: "Inventory item retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/InventoryItem"
+        404:
+          description: "Inventory not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Inventory not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+    
+    patch:
+      tags:
+        - Inventory
+      summary: "Update inventory item"
+      description: "Updates specific fields of an inventory item. Only price and quantity_in_stock can be updated. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inventory_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the inventory item to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              price:
+                type: string
+                example: "24.50"
+              quantity_in_stock:
+                type: integer
+                example: 15
+      responses:
+        200:
+          description: "Inventory item updated successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/InventoryItem"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Inventory not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Inventory not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+          
+    delete:
+      tags:
+        - Inventory
+      summary: "Delete inventory item"
+      description: "Performs a soft delete on the inventory item. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inventory_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the inventory item to delete"
+      responses:
+        200:
+          description: "Inventory successfully deleted (soft delete)"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Inventory deleted (soft)"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Inventory not found or already deleted"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Inventory already deleted"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /inventory/serialized-parts:
+    post:
+      tags:
+        - Inventory
+      summary: "Create a serialized part"
+      description: "Creates a new serialized part linked to an inventory item. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CreateSerializedPartPayload"
+      responses:
+        201:
+          description: "Serialized part created successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Serialized part created successfully"
+              data:
+                $ref: "#/definitions/SerializedPartItem"
+        400:
+          description: "Validation error or duplicate serial number"
+          schema:
+            oneOf:
+              - $ref: "#/definitions/ValidationErrorResponse"
+              - type: object
+                properties:
+                  status:
+                    type: string
+                    example: "error"
+                  message:
+                    type: string
+                    example: "This serialized part already exists"
+                  details:
+                    type: object
+                    properties:
+                      serial_number:
+                        type: array
+                        items:
+                          type: string
+                        example: ["This serialized part already exists."]
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden - invalid role"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+          
+    get:
+      tags:
+        - Inventory
+      summary: "Get all serialized parts"
+      description: "Returns a paginated list of serialized parts with their related inventory details."
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - name: status
+          in: query
+          type: string
+          enum: [available, used, defective]
+          required: false
+          description: "Filter by part status"
+      responses:
+        200:
+          description: "Serialized parts retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              meta:
+                $ref: "#/definitions/PaginationMeta"
+              data:
+                type: array
+                items:
+                  $ref: "#/definitions/SerializedPartItem"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+  /inventory/serialized-parts/{part_id}:
+    get:
+      tags:
+        - Inventory
+      summary: "Get serialized part by ID"
+      description: "Returns a single serialized part by its ID"
+      parameters:
+        - name: part_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the serialized part to retrieve"
+      responses:
+        200:
+          description: "Serialized part retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/SerializedPartItem"
+        404:
+          description: "Serialized part not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Serialized part not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+            
+    patch:
+      tags:
+        - Inventory
+      summary: "Update serialized part status"
+      description: "Updates the status of a serialized part. Only the status field can be updated. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: part_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the serialized part to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required:
+              - status
+            properties:
+              status:
+                type: string
+                enum: [available, used, defective]
+                example: "defective"
+      responses:
+        200:
+          description: "Serialized part updated successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/SerializedPartItem"
+        400:
+          description: "Invalid status value"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Invalid status value"
+              details:
+                type: object
+                properties:
+                  status:
+                    type: array
+                    items:
+                      type: string
+                    example: ["Invalid status value."]
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Serialized part not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Serialized part not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+    
+    delete:
+      tags:
+        - Inventory
+      summary: "Delete serialized part"
+      description: "Performs a soft delete on the serialized part. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: part_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the serialized part to delete"
+      responses:
+        200:
+          description: "Serialized part deleted successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Serialized part deleted successfully"
+        400:
+          description: "Serialized part already deleted"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Serialized part is already deleted"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/UnauthorizedResponse"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/ForbiddenResponse"
+        404:
+          description: "Serialized part not found"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Serialized part not found"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/definitions/ServerErrorResponse"
+
+#MARK: service paths
+  /services:
+    post:
+      tags:
+        - Service
+      summary: "Create new service"
+      description: "Creates a new service with the provided details. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CreateServicePayload"
+      responses:
+        201:
+          description: "Service created successfully"
+          schema:
+            $ref: "#/definitions/CreateServiceResponse"
+        
+    get:
+      tags:
+        - Service
+      summary: "Get all services"
+      description: "Retrieves all services. Requires employee token."
+      responses:
+        200:
+          description: "Services retrieved successfully"
+          schema:
+            $ref: "#/definitions/GetServicesResponse"
+
+  /services/{service_id}:
+    get:
+      tags:
+        - Service
+      summary: "Get service by ID"
+      description: "Retrieves a single service by its ID. Requires employee token."
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service to retrieve"
+      responses:
+        200:
+          description: "Service retrieved successfully"
+          schema:
+            $ref: "#/definitions/CreateServiceResponse"
+
+    put:
+      tags:
+        - Service
+      summary: "Update service"
+      description: "Updates a service with the provided details. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CreateServicePayload"
+      responses:
+        200:
+          description: "Service updated successfully"
+          schema:
+            $ref: "#/definitions/CreateServiceResponse"
+
+    patch:
+      tags:
+        - Service
+      summary: "Partially update service"
+      description: "Updates specific fields of a service. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/PatchServicePayload"
+      responses:
+        200:
+          description: "Service updated successfully"
+          schema:
+            $ref: "#/definitions/CreateServiceResponse"
+
+    delete:
+      tags:
+        - Service
+      summary: "Delete service"
+      description: "Permanently deletes a service. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service to delete"
+      responses:
+        204:
+          description: "Service deleted successfully"
+
+#MARK: service ticket paths
+  /service-tickets:
+    post:
+      tags:
+        - ServiceTicket
+      summary: "Create new service ticket"
+      description: "Creates a new service ticket with the provided details. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters: 
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CreateServiceTicketPayload"
+      responses:  
+        201:
+          description: "Service ticket created successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Service ticket created successfully"
+              data:
+                $ref: "#/definitions/CreateServiceTicketResponse"
+
+    get:
+      tags:
+        - ServiceTicket
+      summary: "List all service tickets"
+      description: "Returns a paginated list of active service tickets with optional filtering and sorting. Only tickets with is_deleted=False are shown. Cached for 60 seconds."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/parameters/PageParam"
+        - $ref: "#/parameters/LimitParam"
+        - $ref: "#/parameters/SortByParam"
+        - $ref: "#/parameters/SortOrderParam"
+        - $ref: "#/parameters/StatusParam"
+        - name: status
+          in: query
+          type: string
+          required: false
+          description: "Filter by status"
+        - name: customer_id
+          in: query
+          type: integer
+          required: false
+          description: "Filter tickets by customer ID"
+      responses:
+        200:
+          description: "Service tickets retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Service tickets retrieved successfully"
+              data:
+                type: array
+                items:
+                  $ref: "#/definitions/CreateServiceTicketResponse"
+              meta:
+                $ref: "#/definitions/PaginationMeta"
+
+  /service-tickets/{service_ticket_id}:
+    get:
+      tags:
+        - ServiceTicket
+      summary: "Get service ticket by ID"
+      description: "Retrieves a single service ticket by its ID. Requires employee token."
+      security: 
+        - bearerAuth: []
+      parameters:
+        - name: service_ticket_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service ticket to retrieve"
+      responses:
+        200:
+          description: "Service ticket retrieved successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/CreateServiceTicketResponse"
+      
+    patch:
+      tags:
+        - ServiceTicket
+      summary: "Partially update service ticket"
+      description: "Updates specific fields of a service ticket. Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: service_ticket_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service ticket to update"
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/PatchServiceTicketPayload"
+      responses:
+        200:
+          description: "Service ticket updated successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Operation successful"
+              data:
+                $ref: "#/definitions/CreateServiceTicketResponse"
+
+    delete:
+      tags:
+        - ServiceTicket
+      summary: "Soft delete a service ticket"
+      description: "Marks a service ticket as deleted (soft delete). Requires employee token."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: service_ticket_id
+          in: path
+          required: true
+          type: integer
+          description: "ID of the service ticket to delete"
+      responses:
+        200:
+          description: "Service ticket soft-deleted successfully"
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "success"
+              message:
+                type: string
+                example: "Service ticket soft-deleted"
+
+#MARK: DEFINITIONS
+definitions:
+  BaseSuccessResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "success"
+      message:
+        type: string
+        example: "Operation successful"
+      data:
+        type: object
+        description: "Response payload"
+
+  # Common Response Definitions
+  ValidationErrorResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Invalid input"
+      errors:
+        type: object
+        properties:
+          field_name:
+            type: array
+            items:
+              type: string
+            example: ["Missing data for required field."]
+    examples:
+      application/json:
+        status: "error"
+        message: "Invalid input"
+
+  UnauthorizedResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        example: "Authorization header is required"
+    examples:
+      application/json:
+        message: "Authorization header is required"
+
+  ForbiddenResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        example: "Forbidden - invalid role"
+    examples:
+      application/json:
+        message: "Forbidden - invalid role"
+
+  NotFoundResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Resource not found"
+    examples:
+      application/json:
+        status: "error"
+        message: "Resource not found"
+
+  ServerErrorResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Internal server error"
+    examples:
+      application/json:
+        status: "error"
+        message: "Internal server error"
+
+  RateLimitResponse:
+    type: string
+    example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 1 hour</p>"
+    examples:
+      text/html: |
+        <!doctype html>
+        <html lang=en>
+        <title>429 Too Many Requests</title>
+        <h1>Too Many Requests</h1>
+        <p>3 per 1 hour</p>
+
+  UnprocessableEntityResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Validation errors occurred"
+      errors:
+        type: object
+        properties:
+          field_name:
+            type: array
+            items:
+              type: string
+            example: ["Invalid format"]
+    examples:
+      application/json:
+        status: "error"
+        message: "Validation errors occurred"
+        errors:
+          phone: ["Invalid phone format"]
+
+  PaginationMeta:
+    type: object
+    properties:
+      pagination:
+        type: object
+        properties:
+          has_next:
+            type: boolean
+            example: false
+          has_prev:
+            type: boolean
+            example: false
+          limit:
+            type: integer
+            example: 10
+          page:
+            type: integer
+            example: 1
+          total_items:
+            type: integer
+            example: 1
+          total_pages:
+            type: integer
+            example: 1
+
+  SuccessResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        examples:
+          application/json:
+            status: "success"
+            message: "Operation successful"
+
+#MARK: Login Related
+  LoginCredentials:
+    type: object
+    required:
+      - email
+      - password
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+
+  LoginResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              token:
+                type: string
+                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        examples:
+          application/json:
+            status: "success"
+            message: "Successfully logged in"
+            data:
+              token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  
+  LoginSuccessResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              token:
+                type: string
+                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        examples:
+          application/json:
+            status: "success"
+            message: "Login successful"
+            data:
+              token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+#MARK: customers definitions
+  CreateCustomerPayload:
+    type: object
+    required:
+      - name
+      - email
+      - phone
+      - password
+    properties:
+      name:
+        type: string
+        maxLength: 50
+      email:
+        type: string
+        format: email
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        description: "Must be exactly 10 digits"
+      password:
+        type: string
+        format: password
+        description: "Must be at least 8 characters long, including letters and numbers"
+
+  CreateCustomerResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        properties:
+          data:
+            $ref: "#/definitions/CustomerProfileData"
+        examples:
+          application/json:
+            status: "success"
+            message: "Customer created successfully"
+            data:
+              id: 9
+              name: "hugo"
+              email: "hugo@gmail.com"
+              phone: "9667766551"
+
+  CustomerProfileData:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 9
+      name:
+        type: string
+        example: "hugo"
+      email:
+        type: string
+        format: email
+        example: "hugo@gmail.com"
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        example: "9667766551"
+
+  CustomerSuccessResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        properties:
+          data:
+            $ref: "#/definitions/CustomerProfileData"
+        examples:
+          application/json:
+            status: "success"
+            message: "Operation successful"
+            data:
+              id: 9
+              name: "hugo"
+              email: "hugo@gmail.com"
+              phone: "9667766551"
+  
+  CustomerConflictResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Customer already exists"
+      details:
+        type: object
+        properties:
+          customer:
+            $ref: "#/definitions/CustomerProfileData"
+    examples:
+      application/json:
+        status: "error"
+        message: "Customer already exists"
+        details:
+          customer:
+            id: 9
+            name: "hugo"
+            email: "hugo@gmail.com"
+            phone: "9667766551"
+
+  CustomerTicketsResponse:
+    allOf:
+      - $ref: "#/definitions/BaseSuccessResponse"
+      - type: object
+        properties:
+          meta:
+            $ref: "#/definitions/PaginationMeta"
+          data:
+            type: array
+            items:
+              $ref: "#/definitions/ServiceTicket"
+        examples:
+          application/json:
+            status: "success"
+            message: "Operation successful"
+            meta:
+              pagination:
+                has_next: false
+                has_prev: false
+                limit: 10
+                page: 1
+                total_items: 1
+                total_pages: 1
+            data:
+              - id: 2
+                closed_at: "2025-04-20T00:45:23.330793"
+                cost: 116.58
+                created_at: "2025-04-20T00:45:23.344572"
+                customer:
+                  email: "zamzam@gmail.com"
+                  id: 1
+                  name: "zambak"
+                employees:
+                  - id: 1
+                    name: "mike"
+                    role: "mechanic"
+                is_deleted: false
+                serialized_parts:
+                  - id: 1
+                    inventory:
+                      desc: "Front brake pad set"
+                      id: 3
+                      inventory_number: "BP-123"
+                      name: "Brake Pad"
+                      price: "59.99"
+                    serial_number: "SP-001"
+                    status: "defective"
+                services:
+                  - base_price: "49.99"
+                    id: 1
+                    service_type: "Brake Check"
+                status: "closed"
+                vin: "1HGCM82633A004352"
+                work_summary: "Brake replacement and oil change"
+
+  UpdateCustomerPayload:
+    type: object
+    properties:
+      name:
+        type: string
+        maxLength: 50
+      email:
+        type: string
+        format: email
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        description: "Must be exactly 10 digits"    
+        
+  PasswordUpdatePayload:
+    type: object
+    required:
+      - current_password
+      - new_password
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+        description: "Must be at least 8 characters, including letters and numbers"
+
+#MARK: employee definitions
+  CreateEmployeePayload:
+    type: object
+    required:
+      - name
+      - email
+      - phone
+      - role
+      - password
+      - salary
+    properties:
+      name:
+        type: string
+        maxLength: 50
+      email:
+        type: string
+        format: email
+        description: "Must be a valid email format. Will be converted to lowercase."
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        description: "Must be exactly 10 digits"
+      role:
+        type: string
+        enum: [mechanic, manager, admin]
+      salary:
+        type: number
+        format: float
+        description: "Decimal number with up to 2 decimal places"
+      password:
+        type: string
+        format: password
+        description: "Must be at least 8 characters, including letters and numbers"
+
+  CreateEmployeeResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "success"
+      message:
+        type: string
+        example: "Employee created successfully"
+      data:
+        type: object
+        properties:
+          id:
+            type: integer
+          name:
+            type: string
+            maxLength: 50
+          email:
+            type: string
+            format: email
+          phone:
+            type: string
+            pattern: "^\\d{10}$"
+          role:
+            type: string
+            enum: [mechanic, manager, admin]
+          salary:
+            type: number
+            format: float
+
+  EmployeeConflictResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Employee already exists"
+      details:
+        type: object
+        properties:
+          employee:
+            $ref: "#/definitions/EmployeeProfileData"
+    examples:
+      application/json:
+        status: "error"
+        message: "Employee already exists"
+        details:
+          employee:
+            id: 5
+            name: "Jane Mechanic"
+            email: "jan@example.com"
+            phone: "1234567890"
+            role: "mechanic"
+            salary: "60000.00"
+  
+  EmployeeProfileData:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 5
+      name:
+        type: string
+        example: "Jane Mechanic"
+      email:
+        type: string
+        format: email
+        example: "jan@example.com"
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        example: "1234567890"
+      role:
+        type: string
+        enum: [mechanic, manager, admin]
+        example: "mechanic"
+      salary:
+        type: string
+        example: "60000.00"
+
+  GetEmployeesResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "success"
+      message:
+        type: string
+        example: "Operation successful"
+      meta:
+        type: object
+        properties:
+          pagination:
+            $ref: "#/definitions/PaginationMeta"
+      data:
+        type: array
+        items:
+          $ref: "#/definitions/EmployeeProfileData"
+    examples:
+      application/json:
+        status: "success"
+        message: "Operation successful"
+        meta:
+          pagination:
+            has_next: false
+            has_prev: false
+            limit: 10
+            page: 1
+            total_items: 4
+            total_pages: 1
+        data:
+          - id: 5
+            name: "Jane Mechanic"
+            email: "jan@example.com"
+            phone: "1234567890"
+            role: "mechanic"
+            salary: "60000.00"
+          - id: 4
+            name: "Jane Mechanic Queen"
+            email: "janemechanic@example.com"
+            phone: "1234567890"
+            role: "mechanic"
+            salary: "66000.00"
+  #!check this meta latet
+  GetCustomersResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "success"
+      message:
+        type: string
+        example: "Operation successful"
+      meta:
+        type: object
+        properties:
+          pagination:
+            $ref: "#/definitions/PaginationMeta"
+      data:
+        type: array
+        items:
+          $ref: "#/definitions/CustomerProfileData"
+    examples:
+      application/json:
+        status: "success"
+        message: "Operation successful"
+        meta:
+          pagination:
+            has_next: false
+            has_prev: false
+            limit: 10
+            page: 1
+            total_items: 10
+            total_pages: 1
+        data:
+          - id: 1
+            name: "zambak"
+            email: "zamzam@gmail.com"
+            phone: "2908763453"
+          - id: 3
+            name: "foxy"
+            email: "foxy@gmail.com"
+            phone: "2900643453"
+            
+  UpdateEmployeePayload:
+    type: object
+    properties:
+      name:
+        type: string
+        maxLength: 50
+      email:
+        type: string
+        format: email
+        description: "Must be a valid email format. Will be converted to lowercase."
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        description: "Must be exactly 10 digits"
+      role:
+        type: string
+        enum: [mechanic, manager, admin]
+      salary:
+        type: number
+        format: float
+        description: "Decimal number with up to 2 decimal places"
+
+  PatchEmployeePayload:
+    type: object
+    properties:
+      name:
+        type: string
+        maxLength: 50
+      email:
+        type: string
+        format: email
+        description: "Must be a valid email format. Will be converted to lowercase."
+      phone:
+        type: string
+        pattern: "^\\d{10}$"
+        description: "Must be exactly 10 digits"
+      salary:
+        type: number
+        format: float
+        description: "Decimal number with up to 2 decimal places"
+      password:
+        type: string
+        format: password
+        description: "New password. Must be at least 8 characters, including letters and numbers. Will be hashed if provided."
+
+#MARK: Inventory Definitions
+  CreateInventoryPayload:
+    type: object
+    required:
+      - name
+      - inventory_number
+      - price
+      - quantity_in_stock
+    properties:
+      name:
+        type: string
+        example: "Wheel"
+      inventory_number:
+        type: string
+        example: "SP-201"
+        description: "Must be unique"
+      price:
+        type: string
+        example: "14.99"
+      desc:
+        type: string
+        example: "some car wheel"
+      quantity_in_stock:
+        type: integer
+        example: 50
+        
+  InventoryItem:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 1
+      name:
+        type: string
+        example: "Oil Filter"
+      inventory_number:
+        type: string
+        example: "FLT-2203"
+      price:
+        type: string
+        example: "24.50"
+      desc:
+        type: string
+        example: "Standard replacement oil filter compatible with most passenger vehicles"
+      quantity_in_stock:
+        type: integer
+        example: 15
+      is_deleted:
+        type: boolean
+        example: false
+
+  CreateSerializedPartPayload:
+    type: object
+    required:
+      - serial_number
+      - status
+      - inventory_id
+    properties:
+      serial_number:
+        type: string
+        example: "TZ-7824"
+      status:
+        type: string
+        enum: [available, used, defective]
+        example: "available"
+      inventory_id:
+        type: integer
+        example: 5
+
+  SerializedPartItem:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 5
+      serial_number:
+        type: string
+        example: "TZ-7824"
+      inventory_id:
+        type: integer
+        example: 5
+      status:
+        type: string
+        enum: [available, used, defective]
+        example: "available"
+      is_deleted:
+        type: boolean
+        example: false
+      inventory:
+        type: object
+        properties:
+          id:
+            type: integer
+            example: 5
+          name:
+            type: string
+            example: "Spark Plug"
+          inventory_number:
+            type: string
+            example: "SP-200"
+          price:
+            type: string
+            example: "14.99"
+          desc:
+            type: string
+            example: "Spark plug forengines"
+
+# MARK: Service Definitions
+  CreateServicePayload:
+    type: object
+    required:
+      - service_type
+      - base_price
+      - description 
+    properties:
+      service_type:
+        type: string
+        example: "Wheel Alignment"
+      base_price:
+        type: string
+        example: "89.99"  
+      description:
+        type: string
+        example: "Tire Services"
+
+  PatchServicePayload:
+    type: object
+    properties:
+      service_type:
+        type: string
+        example: "Brake Check"
+      base_price:
+        type: string
+        example: "59.99"
+      description:
+        type: string
+        example: "Full brake inspection"
+
+  CreateServiceResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 5
+      service_type:
+        type: string
+        example: "Wheel Alignment"
+      base_price:
+        type: string
+        example: "89.99"
+      description:
+        type: string
+        example: "Tire Services"
+
+  GetServicesResponse:
+    type: array
+    items:
+      $ref: "#/definitions/CreateServiceResponse"
+
+#MARK: service ticket definitions
+  CreateServiceTicketPayload:
+    type: object
+    required:
+      - vin
+      - work_summary
+      - status
+      - customer_id
+      - employee_ids
+      - service_ids
+      - part_ids
+    properties:
+      vin:
+        type: string
+        example: "ABC9876543210"
+        description: "Vehicle Identification Number"
+      work_summary:
+        type: string
+        example: "Brake inspection and pad replacement"
+        description: "Summary of work to be performed"
+      status:
+        type: string
+        enum: [open, in_progress, closed]
+        example: "open"
+      customer_id:
+        type: integer
+        example: 1
+        description: "ID of the customer who owns the vehicle"
+      employee_ids:
+        type: array
+        items:
+          type: integer
+        example: [2, 3]
+        description: "IDs of employees assigned to the ticket"
+      service_ids:
+        type: array
+        items:
+          type: integer
+        example: [3]
+        description: "IDs of services to be performed"
+      part_ids:
+        type: array
+        items:
+          type: integer
+        example: [3]
+        description: "IDs of parts to be used in the service"
+
+  CreateServiceTicketResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 8
+      vin:
+        type: string
+        example: "ABC9876543210"
+      work_summary:
+        type: string
+        example: "Brake inspection and pad replacement"
+      status:
+        type: string
+        enum: [open, in_progress, closed]
+        example: "open"
+      created_at:
+        type: string
+        format: date-time
+        example: "2025-05-21T00:12:03.807165"
+      closed_at:
+        type: string
+        format: date-time
+        nullable: true
+        example: null
+      cost:
+        type: number
+        format: float
+        example: 0.0
+      is_deleted:
+        type: boolean
+        example: false
+      customer:
+        type: object
+        properties:
+          id:
+            type: integer
+            example: 1
+          name:
+            type: string
+            example: "zambak"
+          email:
+            type: string
+            example: "zamzam@gmail.com"
+      employees:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 3
+            name:
+              type: string
+              example: "lilo"
+            role:
+              type: string
+              example: "manager"
+      services:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 3
+            service_type:
+              type: string
+              example: "Oil Change"
+            base_price:
+              type: string
+              example: "19.99"
+      serialized_parts:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 3
+            serial_number:
+              type: string
+              example: "BT-3501"
+            status:
+              type: string
+              enum: [available, used, defective]
+              example: "available"
+            inventory:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 5
+                name:
+                  type: string
+                  example: "Spark Plug"
+                inventory_number:
+                  type: string
+                  example: "SP-200"
+                price:
+                  type: string
+                  example: "14.99"
+                desc:
+                  type: string
+                  example: "Spark plug forengines"
+
+  PatchServiceTicketPayload:
+    type: object
+    properties:
+      work_summary:
+        type: string
+        example: "Brake inspection and pad replacement"
+      status:
+        type: string
+        enum: [open, in_progress, closed]
+        example: "open"
+      add_employee_ids:
+        type: array
+        items:
+          type: integer
+        example: [1, 2]
+        description: "IDs of employees to add to the ticket"
+      remove_employee_ids:
+        type: array
+        items:
+          type: integer
+        example: [3]
+        description: "IDs of employees to remove from the ticket"
+      add_service_ids:
+        type: array
+        items:
+          type: integer
+        example: [1]
+        description: "IDs of services to add to the ticket"
+      remove_service_ids:
+        type: array
+        items:
+          type: integer
+        example: [2]
+        description: "IDs of services to remove from the ticket" 
+      add_part_ids:
+        type: array
+        items:
+          type: integer
+        example: [1]
+        description: "IDs of parts to add to the ticket (must be available parts)"
+      remove_part_ids:
+        type: array
+        items:
+          type: integer
+        example: [2]
+        description: "IDs of parts to remove from the ticket"
+
+        

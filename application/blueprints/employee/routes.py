@@ -19,10 +19,20 @@ from sqlalchemy import func
 @limiter.limit("3 per minute")
 def login():
     try:
-        credentials = login_schema.load(request.get_json())
-        employee = db.session.query(Employee).filter_by(email=credentials.email.lower()).first()
+        # Get request data
+        request_json = request.get_json()
+        if not request_json:
+            return error_response("Missing request data", 400)
+            
+        # Validate credentials
+        credentials = login_schema.load(request_json)
+        if not credentials.get('email') or not credentials.get('password'):
+            return error_response("Email and password are required", 400)
+            
+        # Find employee
+        employee = db.session.query(Employee).filter_by(email=credentials['email'].lower()).first()
 
-        if employee and verify_password(employee.password, credentials.password):
+        if employee and verify_password(employee.password, credentials['password']):
             token = encode_token(employee.id, 'employee')
             return success_response(message="Successfully logged in", data={"token": token})
 
@@ -30,6 +40,8 @@ def login():
 
     except ValidationError as e:
         return validation_error_response(e)
+    except Exception as e:
+        return error_response(f"Login error: {str(e)}", 500)
 
 #---Create Employee----
 @employee_bp.route('/', methods=['POST'])
@@ -65,7 +77,7 @@ def get_employees(user_id):
     page, limit, sort_by, sort_order = get_pagination_params()
     
     if sort_by not in ["id", "name", "email", "phone", "role", "salary"]:
-        return error_response("Invalid sort_by field", 400)
+        return error_response("Invalid query parameter", 400)
     
     query = db.session.query(Employee)
     filter_params = {key: request.args.get(key) for key in ('name', 'email', 'role')}
@@ -92,7 +104,7 @@ def get_customers(user_id):
     page, limit, sort_by, sort_order = get_pagination_params()
     
     if sort_by not in ["id", "name", "email", "phone"]:
-        return error_response("Invalid sort_by field", 400)
+        return error_response("Invalid query parameter", 400)
     
     # Start with base query
     query = db.session.query(Customer)
@@ -113,10 +125,10 @@ def get_customers(user_id):
     return success_response(data=customers_schema.dump(customers), meta={"pagination": pagination})
 
 # ---- Get by ID / Employee ----
-@employee_bp.route('/<int:employee_id>', methods=['GET'])
+@employee_bp.route('/<int:id>', methods=['GET'])
 @token_required(expected_role="employee")
-def get_employee(user_id, employee_id):   
-    employee = db.session.get(Employee, employee_id)
+def get_employee(user_id, id):   
+    employee = db.session.get(Employee, id)
     if not employee:
         return error_response("Employee not found", 404)
     return success_response(data=employee_schema.dump(employee))
@@ -218,9 +230,9 @@ def update_employee(user_id, id):
     except Exception as e:
         db.session.rollback()
         return error_response(str(e), 500)
-    
 
-# MARK: Partial Update Employee
+# MARK: PATCH
+# Partial Update Employee
 @employee_bp.route('/<int:id>', methods=['PATCH'])
 @token_required(expected_role="employee")
 def partial_update_employee(user_id, id):
@@ -231,11 +243,13 @@ def partial_update_employee(user_id, id):
 
         data = request.json
         
+        if "role" in data:
+            return error_response("You are not allowed to update role", 403)
+        
         # Skip validation if not needed
         if not data:
             return success_response(data=employee_schema.dump(employee))
             
-        # Lallow missing fields
         try:
             validated_data = employee_schema.load(data, partial=True)
             

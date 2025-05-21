@@ -1,5 +1,5 @@
 from marshmallow import fields, ValidationError, validates, pre_load
-from marshmallow.validate import Email, Length, Regexp
+from marshmallow.validate import Length, Regexp
 from application.extensions import ma
 from application.models import Customer
 from application.utils.utils import is_strong_password
