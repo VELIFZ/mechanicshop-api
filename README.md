@@ -62,15 +62,14 @@ The project includes comprehensive test suites for all major components:
 
 ```bash
 # Run all tests
-python -m pytest
+python -m unittest discover tests
 
 # Run specific test files
-python -m pytest tests/test_employee.py
-python -m pytest tests/test_customer.py
-python -m pytest tests/test_ticket.py
-python -m pytest tests/test_inventory.py
-python -m pytest tests/test_service_.py
-
+python -m unittest tests/test_employee.py
+python -m unittest tests/test_customer.py
+python -m unittest tests/test_ticket.py
+python -m unittest tests/test_inventory.py
+python -m unittest tests/test_service.py
 ```
 
 ## API Reference
