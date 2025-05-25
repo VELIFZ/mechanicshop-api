@@ -174,7 +174,7 @@ class TestServiceTicket(unittest.TestCase):
     # ------- Get Tests -------
     # 1- get all service tickets
     def test_get_all_service_tickets(self):
-        response = self.client.get("/service-tickets/?page=1&limit=10")
+        response = self.client.get("/service-tickets/?page=1&limit=10", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         
         response_data = response.get_json()
@@ -189,12 +189,12 @@ class TestServiceTicket(unittest.TestCase):
 
     # 2- get ticket by id
     def test_get_ticket_by_id(self):
-        response = self.client.get(f"/service-tickets/{self.ticket_id}")
+        response = self.client.get(f"/service-tickets/{self.ticket_id}", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
     # 3- get ticket by invalid id
     def test_get_ticket_by_invalid_id(self):
-        response = self.client.get("/service-tickets/758")
+        response = self.client.get("/service-tickets/758", headers=self.headers)
         self.assertEqual(response.status_code, 404)
         
         self.assertEqual(response.get_json()["status"], "error")
@@ -206,14 +206,14 @@ class TestServiceTicket(unittest.TestCase):
             db.session.query(ServiceTicket).delete()
             db.session.commit()
             
-        response = self.client.get("/service-tickets/")
+        response = self.client.get("/service-tickets/", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         
         self.assertEqual(response.get_json()["data"], [])
 
     # 5- see if all tickets structure is correct
     def test_get_all_tickets_structure(self):
-        response = self.client.get("/service-tickets/")
+        response = self.client.get("/service-tickets/", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_json()
@@ -231,7 +231,7 @@ class TestServiceTicket(unittest.TestCase):
 
     # 6- pagination
     def test_pagination_service_tickets(self):
-        response = self.client.get("/service-tickets/?page=2&limit=5")
+        response = self.client.get("/service-tickets/?page=2&limit=5", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_json()
@@ -242,7 +242,7 @@ class TestServiceTicket(unittest.TestCase):
     def test_filter_service_tickets_by_customer_id(self):
         customer_id = self.customer.id
 
-        response = self.client.get(f"/service-tickets/?customer_id={customer_id}")
+        response = self.client.get(f"/service-tickets/?customer_id={customer_id}", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_json()
@@ -256,7 +256,7 @@ class TestServiceTicket(unittest.TestCase):
 
     # 8- filter by status 
     def test_filter_service_tickets_by_status(self):
-        response = self.client.get("/service-tickets/?status=open")
+        response = self.client.get("/service-tickets/?status=open", headers=self.headers)
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_json()
@@ -315,6 +315,6 @@ class TestServiceTicket(unittest.TestCase):
         self.assertEqual(response.get_json()["status"], "success")
         
         # Verify it's soft deleted (can't be retrieved)
-        response_check = self.client.get(f"/service-tickets/{self.ticket_id}")
+        response_check = self.client.get(f"/service-tickets/{self.ticket_id}", headers=self.headers)
         self.assertEqual(response_check.status_code, 404)
         

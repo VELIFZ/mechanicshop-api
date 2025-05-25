@@ -46,7 +46,6 @@ def create_app(config_name="development"):
     app.logger.info(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     print(f"SECRET_KEY in app: {app.config['SECRET_KEY']}")
 
-    
     # add extensions to app
     db.init_app(app)
     ma.init_app(app)
@@ -77,7 +76,8 @@ def create_app(config_name="development"):
     def handle_bad_request(e):
         return error_response("Invalid or malformed JSON", 400)
     
-    with app.app_context():
-        db.create_all()
+    if config_name == "development":
+        with app.app_context():
+            db.create_all()
     
     return app

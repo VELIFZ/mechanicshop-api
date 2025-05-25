@@ -221,7 +221,7 @@ class TestCustomer(unittest.TestCase):
         
         # Try to update with wrong current password
         response = self.client.patch(
-            '/customers/update-password',
+            '/customers/me/update-password',
             json={"current_password": "wrong", "new_password": "newpass123"},
             headers=headers
         )
@@ -229,7 +229,7 @@ class TestCustomer(unittest.TestCase):
         
         # Update with correct password
         response = self.client.patch(
-            '/customers/update-password',
+            '/customers/me/update-password',
             json={"current_password": "test1234", "new_password": "newpass123"},
             headers=headers
         )

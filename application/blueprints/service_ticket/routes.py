@@ -80,7 +80,7 @@ def create_service_ticket(user_id):
 @service_ticket_bp.route("/", methods=["GET"])
 @token_required(expected_role="employee")
 @cache.cached(timeout=60)
-def get_all_tickets():
+def get_all_tickets(user_id):
     try:
         page, limit, sort_by, sort_order = get_pagination_params()
         
@@ -117,7 +117,8 @@ def get_all_tickets():
 
 # get by id
 @service_ticket_bp.route("/<int:id>", methods=["GET"])
-def get_ticket(id):
+@token_required(expected_role="employee")
+def get_ticket(user_id, id):
     ticket = db.session.get(ServiceTicket, id)
     if not ticket or ticket.is_deleted:
         return error_response("Service ticket not found.", 404)

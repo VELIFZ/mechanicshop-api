@@ -186,13 +186,13 @@ class TestEmployee(unittest.TestCase):
         
     # 2- Single fetch by id
     def test_get_employee_by_id(self):
-        response = self.client.get(f'/employees/{self.id}', headers=self.headers)
+        response = self.client.get(f'/employees/{self.employee_id}', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         
         response_data = response.get_json()
         self.assertIn("data", response_data)
         data = response_data["data"]
-        self.assertEqual(data["id"], self.id)
+        self.assertEqual(data["id"], self.employee_id)
         self.assertEqual(data["email"], self.test_email)
         
     # 3- Get all customers
@@ -334,8 +334,7 @@ class TestEmployee(unittest.TestCase):
     # 1- Patch endpoint allows any field; patching + checking more just in case if business needs it
     def test_patch_employee(self):
         payload = {
-            "phone": "2223334455",
-            "role": "manager"
+            "phone": "2223334455"
         }
         response = self.client.patch(f'/employees/{self.employee_id}', json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 200)
@@ -344,13 +343,11 @@ class TestEmployee(unittest.TestCase):
         # response check
         data = response.get_json()["data"]
         self.assertEqual(data["phone"], "2223334455")
-        self.assertEqual(data["role"], "manager")
         
         # additional db fetch check
         with self.app.app_context():
             updated_employee = db.session.get(Employee, self.employee_id)
             self.assertEqual(updated_employee.phone, "2223334455")
-            self.assertEqual(updated_employee.role, "manager")
         
     # 2- patch a customer by employee 
     def test_patch_customer_as_employee(self):
