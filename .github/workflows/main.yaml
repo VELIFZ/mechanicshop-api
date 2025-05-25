@@ -1,0 +1,63 @@
+name: Flask CI/CD
+
+on:
+  push:
+    branches: [main]
+
+#steps in pipeline build, test, deploy
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-sersion:
+
+      - name: Create virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activates
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install - r requirements.txt
+
+      - name: Print debugging info
+        run: |
+          echo "Python Version: $(python --version)"
+          echo "Working Directory" $(pwd)
+          echo "Contents of Working Directory: $(ls-l)"
+          echo "Ceontents of site-packages: $(ls-l venv/lib/python*/site-packages)"
+  
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-sersion:
+
+      - name: Create virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activates
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install - r requirements.txt
+
+      - name: Run test
+        run: python -m unittest discover -s tests -p "test_*.py"
