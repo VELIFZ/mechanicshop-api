@@ -1,8 +1,12 @@
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Only load .env in development or local testing
+if os.environ.get("FLASK_ENV") != "production":
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')

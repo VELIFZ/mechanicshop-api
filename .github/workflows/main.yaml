@@ -49,18 +49,18 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Create virtual environment
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          pip install -r requirements.txt
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
       - name: Run tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
         env:
           SECRET_KEY: github_actions_secret_key
           TEST_DATABASE_URI: sqlite:///test.db
+          FLASK_ENV: testing
+

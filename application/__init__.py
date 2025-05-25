@@ -23,7 +23,9 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     }
 )
 
-def create_app(config_name="development"):
+def create_app(config_name="None"):
+    if config_name is None:
+        config_name = os.getenv("FLASK_ENV", "development")
     
     app = Flask(__name__)
     
