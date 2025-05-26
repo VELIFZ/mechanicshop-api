@@ -111,18 +111,9 @@ paths:
             $ref: "#/definitions/UnauthorizedResponse"
         429:
           description: "Too Many Requests"
-          produces:
-            - text/html
           schema:
             type: string
             example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 10 minute</p>"
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>3 per 10 minute</p>
 
   /customers:
     post:
@@ -150,19 +141,6 @@ paths:
           description: "Email already exists"
           schema:
             $ref: "#/definitions/CustomerConflictResponse"
-        429:
-          description: "Too Many Requests"
-          produces:
-            - text/html
-          schema:
-            type: string
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>3 per 1 hour</p>
         500:
           $ref: "#/definitions/ServerErrorResponse"
 
@@ -314,13 +292,7 @@ paths:
               message:
                 type: string
                 example: "Missing required fields"
-            examples:
-              missing_fields:
-                status: "error"
-                message: "Missing required fields"
-              invalid_password:
-                status: "error"
-                message: "Password must be at least 8 characters, including letters and numbers."
+
         401:
           description: "Current password incorrect"
           schema:
@@ -432,18 +404,10 @@ paths:
             $ref: "#/definitions/ValidationErrorResponse"
         429:
           description: "Too Many Requests"
-          produces:
-            - text/html
           schema:
             type: string
             example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 1 hour</p>"
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>3 per 1 hour</p>
+
         500:
           description: "Server error"
           examples:
@@ -820,18 +784,10 @@ paths:
                 example: "Employee not found"
         429:
           description: "Too Many Requests"
-          produces:
-            - text/html
           schema:
             type: string
             example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>5 per 1 hour</p>"
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>5 per 1 hour</p>
+
         500:
           description: "Server error"
           schema:
@@ -1022,18 +978,10 @@ paths:
               message: "Employee not found"
         429:
           description: "Too Many Requests"
-          produces:
-            - text/html
           schema:
             type: string
             example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>10 per 1 minute</p>"
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>10 per 1 minute</p>
+
         500:
           description: "Server error"
           schema:
@@ -1139,18 +1087,10 @@ paths:
               message: "Employee not found"
         429:
           description: "Too Many Requests"
-          produces:
-            - text/html
           schema:
             type: string
             example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>10 per 1 minute</p>"
-          examples:
-            text/html: |
-              <!doctype html>
-              <html lang=en>
-              <title>429 Too Many Requests</title>
-              <h1>Too Many Requests</h1>
-              <p>10 per 1 minute</p>
+
         500:
           description: "Server error"
           schema:
@@ -1246,24 +1186,22 @@ paths:
         400:
           description: "Validation error or duplicate inventory number"
           schema:
-            oneOf:
-              - $ref: "#/definitions/ValidationErrorResponse"
-              - type: object
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error"
+              message:
+                type: string
+                example: "Validation error or duplicate inventory number"
+              details:
+                type: object
                 properties:
-                  status:
-                    type: string
-                    example: "error"
-                  message:
-                    type: string
-                    example: "This inventory number already exists."
-                  details:
-                    type: object
-                    properties:
-                      inventory_number:
-                        type: array
-                        items:
-                          type: string
-                        example: ["This inventory number already exists."]
+                  inventory_number:
+                    type: array
+                    items:
+                      type: string
+                    example: ["This inventory number already exists."]
         401:
           description: "Unauthorized"
           schema:
@@ -1526,24 +1464,22 @@ paths:
         400:
           description: "Validation error or duplicate serial number"
           schema:
-            oneOf:
-              - $ref: "#/definitions/ValidationErrorResponse"
-              - type: object
+            type: object
+            properties:
+              status:
+                type: string
+                example: "error" 
+              message:
+                type: string
+                example: "Validation error or duplicate serial number"
+              details:
+                type: object
                 properties:
-                  status:
-                    type: string
-                    example: "error"
-                  message:
-                    type: string
-                    example: "This serialized part already exists"
-                  details:
-                    type: object
-                    properties:
-                      serial_number:
-                        type: array
-                        items:
-                          type: string
-                        example: ["This serialized part already exists."]
+                  serial_number:
+                    type: array
+                    items:
+                      type: string
+                    example: ["This serialized part already exists."]
         401:
           description: "Unauthorized"
           schema:
@@ -2088,10 +2024,6 @@ definitions:
             items:
               type: string
             example: ["Missing data for required field."]
-    examples:
-      application/json:
-        status: "error"
-        message: "Invalid input"
 
   UnauthorizedResponse:
     type: object
@@ -2099,9 +2031,6 @@ definitions:
       message:
         type: string
         example: "Authorization header is required"
-    examples:
-      application/json:
-        message: "Authorization header is required"
 
   ForbiddenResponse:
     type: object
@@ -2109,9 +2038,6 @@ definitions:
       message:
         type: string
         example: "Forbidden - invalid role"
-    examples:
-      application/json:
-        message: "Forbidden - invalid role"
 
   NotFoundResponse:
     type: object
@@ -2122,10 +2048,6 @@ definitions:
       message:
         type: string
         example: "Resource not found"
-    examples:
-      application/json:
-        status: "error"
-        message: "Resource not found"
 
   ServerErrorResponse:
     type: object
@@ -2136,21 +2058,10 @@ definitions:
       message:
         type: string
         example: "Internal server error"
-    examples:
-      application/json:
-        status: "error"
-        message: "Internal server error"
 
   RateLimitResponse:
     type: string
     example: "<!doctype html>\n<html lang=en>\n<title>429 Too Many Requests</title>\n<h1>Too Many Requests</h1>\n<p>3 per 1 hour</p>"
-    examples:
-      text/html: |
-        <!doctype html>
-        <html lang=en>
-        <title>429 Too Many Requests</title>
-        <h1>Too Many Requests</h1>
-        <p>3 per 1 hour</p>
 
   UnprocessableEntityResponse:
     type: object
@@ -2169,12 +2080,6 @@ definitions:
             items:
               type: string
             example: ["Invalid format"]
-    examples:
-      application/json:
-        status: "error"
-        message: "Validation errors occurred"
-        errors:
-          phone: ["Invalid phone format"]
 
   PaginationMeta:
     type: object
@@ -2205,10 +2110,13 @@ definitions:
     allOf:
       - $ref: "#/definitions/BaseSuccessResponse"
       - type: object
-        examples:
-          application/json:
-            status: "success"
-            message: "Operation successful"
+        properties:
+          status:
+            type: string
+            example: "success"
+          message:
+            type: string
+            example: "Operation successful"
 
 #MARK: Login Related
   LoginCredentials:
@@ -2233,12 +2141,6 @@ definitions:
               token:
                 type: string
                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-        examples:
-          application/json:
-            status: "success"
-            message: "Successfully logged in"
-            data:
-              token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   
   LoginSuccessResponse:
     allOf:
@@ -2251,12 +2153,6 @@ definitions:
               token:
                 type: string
                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-        examples:
-          application/json:
-            status: "success"
-            message: "Login successful"
-            data:
-              token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
 #MARK: customers definitions
   CreateCustomerPayload:
@@ -2289,15 +2185,6 @@ definitions:
         properties:
           data:
             $ref: "#/definitions/CustomerProfileData"
-        examples:
-          application/json:
-            status: "success"
-            message: "Customer created successfully"
-            data:
-              id: 9
-              name: "hugo"
-              email: "hugo@gmail.com"
-              phone: "9667766551"
 
   CustomerProfileData:
     type: object
@@ -2324,15 +2211,6 @@ definitions:
         properties:
           data:
             $ref: "#/definitions/CustomerProfileData"
-        examples:
-          application/json:
-            status: "success"
-            message: "Operation successful"
-            data:
-              id: 9
-              name: "hugo"
-              email: "hugo@gmail.com"
-              phone: "9667766551"
   
   CustomerConflictResponse:
     type: object
@@ -2348,16 +2226,6 @@ definitions:
         properties:
           customer:
             $ref: "#/definitions/CustomerProfileData"
-    examples:
-      application/json:
-        status: "error"
-        message: "Customer already exists"
-        details:
-          customer:
-            id: 9
-            name: "hugo"
-            email: "hugo@gmail.com"
-            phone: "9667766551"
 
   CustomerTicketsResponse:
     allOf:
@@ -2369,50 +2237,7 @@ definitions:
           data:
             type: array
             items:
-              $ref: "#/definitions/ServiceTicket"
-        examples:
-          application/json:
-            status: "success"
-            message: "Operation successful"
-            meta:
-              pagination:
-                has_next: false
-                has_prev: false
-                limit: 10
-                page: 1
-                total_items: 1
-                total_pages: 1
-            data:
-              - id: 2
-                closed_at: "2025-04-20T00:45:23.330793"
-                cost: 116.58
-                created_at: "2025-04-20T00:45:23.344572"
-                customer:
-                  email: "zamzam@gmail.com"
-                  id: 1
-                  name: "zambak"
-                employees:
-                  - id: 1
-                    name: "mike"
-                    role: "mechanic"
-                is_deleted: false
-                serialized_parts:
-                  - id: 1
-                    inventory:
-                      desc: "Front brake pad set"
-                      id: 3
-                      inventory_number: "BP-123"
-                      name: "Brake Pad"
-                      price: "59.99"
-                    serial_number: "SP-001"
-                    status: "defective"
-                services:
-                  - base_price: "49.99"
-                    id: 1
-                    service_type: "Brake Check"
-                status: "closed"
-                vin: "1HGCM82633A004352"
-                work_summary: "Brake replacement and oil change"
+              $ref: "#/definitions/CreateServiceTicketResponse"
 
   UpdateCustomerPayload:
     type: object
@@ -2518,18 +2343,6 @@ definitions:
         properties:
           employee:
             $ref: "#/definitions/EmployeeProfileData"
-    examples:
-      application/json:
-        status: "error"
-        message: "Employee already exists"
-        details:
-          employee:
-            id: 5
-            name: "Jane Mechanic"
-            email: "jan@example.com"
-            phone: "1234567890"
-            role: "mechanic"
-            salary: "60000.00"
   
   EmployeeProfileData:
     type: object
@@ -2574,32 +2387,7 @@ definitions:
         type: array
         items:
           $ref: "#/definitions/EmployeeProfileData"
-    examples:
-      application/json:
-        status: "success"
-        message: "Operation successful"
-        meta:
-          pagination:
-            has_next: false
-            has_prev: false
-            limit: 10
-            page: 1
-            total_items: 4
-            total_pages: 1
-        data:
-          - id: 5
-            name: "Jane Mechanic"
-            email: "jan@example.com"
-            phone: "1234567890"
-            role: "mechanic"
-            salary: "60000.00"
-          - id: 4
-            name: "Jane Mechanic Queen"
-            email: "janemechanic@example.com"
-            phone: "1234567890"
-            role: "mechanic"
-            salary: "66000.00"
-  #!check this meta latet
+
   GetCustomersResponse:
     type: object
     properties:
@@ -2618,27 +2406,6 @@ definitions:
         type: array
         items:
           $ref: "#/definitions/CustomerProfileData"
-    examples:
-      application/json:
-        status: "success"
-        message: "Operation successful"
-        meta:
-          pagination:
-            has_next: false
-            has_prev: false
-            limit: 10
-            page: 1
-            total_items: 10
-            total_pages: 1
-        data:
-          - id: 1
-            name: "zambak"
-            email: "zamzam@gmail.com"
-            phone: "2908763453"
-          - id: 3
-            name: "foxy"
-            email: "foxy@gmail.com"
-            phone: "2900643453"
             
   UpdateEmployeePayload:
     type: object
@@ -2914,7 +2681,7 @@ definitions:
       closed_at:
         type: string
         format: date-time
-        nullable: true
+        description: "Nullable. ISO 8601 timestamp or null"
         example: null
       cost:
         type: number
@@ -3042,6 +2809,4 @@ definitions:
         items:
           type: integer
         example: [2]
-        description: "IDs of parts to remove from the ticket"
-
-        
+        description: "IDs of parts to remove from the ticket"       

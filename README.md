@@ -25,6 +25,9 @@ A basic service ticket system for auto mechanic shop with customers, mechanics, 
 - SQLite (default for testing)
 - Flask-Migrate (Database migrations)
 - Flask-CORS (Cross-origin support)
+- Flask-Swagger (API documentation)
+- Flask-Limiter (Rate limiting)
+- Flask-Caching (Response caching)
 
 ## Setup
 
@@ -47,7 +50,7 @@ python app.py
 
 ## Environment Variables
 
-The application uses environment variables for configuration. Copy the `env.example` file to `.env` and update the values:
+The application uses environment variables for configuration. Create a `.env` file with the following variables:
 
 - `SECRET_KEY`: Used for token generation and security
 - `DEV_DATABASE_URI`: Database URI for development

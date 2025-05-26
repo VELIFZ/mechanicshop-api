@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -13,7 +14,8 @@ from werkzeug.exceptions import BadRequest
 from application.utils.utils import error_response
 
 SWAGGER_URL = '/api/docs'  # set the endpoint for documentation
-API_URL = '/static/swagger.yaml'  # Our API URL (grab local host)
+API_URL = '/static/swagger.yaml' 
+#! Do i need to change this? API_URL = 'https://mechanicshop-api-ahv0.onrender.com/static/swagger.yaml'
 
 swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
@@ -83,3 +85,4 @@ def create_app(config_name="None"):
             db.create_all()
     
     return app
+
