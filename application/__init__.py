@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_migrate import Migrate
 from application.extensions import ma, limiter, cache
@@ -14,14 +14,17 @@ from werkzeug.exceptions import BadRequest
 from application.utils.utils import error_response
 
 SWAGGER_URL = '/api/docs'  # set the endpoint for documentation
-API_URL = '/static/swagger.yaml' 
-#! Do i need to change this? API_URL = 'https://mechanicshop-api-ahv0.onrender.com/static/swagger.yaml'
+
+# Base API URL configuration that will be updated in create_app based on environment
+API_URL = '/static/swagger.yaml'
 
 swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
     config={
-        'app_name': "Mechanic Shop API"
+        'app_name': "Mechanic Shop API",
+        'validatorUrl': None,  #disabling validator to prevent external validation calls by swagger ui - good for privacy
+        'presets': ['swagger-ui-standalone-preset']
     }
 )
 
@@ -44,11 +47,6 @@ def create_app(config_name="None"):
     else:
         app.logger.warning(f"Unknown configuration '{config_name}', defaulting to development")
         app.config.from_object("config.DevelopmentConfig")
-    
-    # Print the config to debug
-    app.logger.info(f"Starting application in {config_name} mode")
-    app.logger.info(f"SQLALCHEMY_DATABASE_URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
-    print(f"SECRET_KEY in app: {app.config['SECRET_KEY']}")
 
     # add extensions to app
     db.init_app(app)
@@ -56,6 +54,11 @@ def create_app(config_name="None"):
     limiter.init_app(app)
     cache.init_app(app)
     migrate = Migrate(app, db)
+    
+    # Serve swagger.yaml
+    @app.route('/static/swagger.yaml')
+    def send_swagger():
+        return send_from_directory('static', 'swagger.yaml')
     
     # Register blueprints
     app.register_blueprint(customer_bp, url_prefix='/customers')
@@ -66,20 +69,23 @@ def create_app(config_name="None"):
     app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL) 
     
     # Error handlers for production
-    if config_name == "production":
-        @app.errorhandler(Exception)
-        def handle_error(e):
-            return jsonify({"error": str(e)}), 500
-            
-        @app.errorhandler(404)
-        def handle_not_found(e):
-            return jsonify({"error": "Resource not found"}), 404
     
     # Register error handlers
     @app.errorhandler(BadRequest)
     def handle_bad_request(e):
         return error_response("Invalid or malformed JSON", 400)
+
+    if config_name == "production":
+        @app.errorhandler(Exception)
+        def handle_error(e):
+            app.logger.exception("Unhandled exception")
+            return jsonify({"error": "Internal server error"}), 500
+
+        @app.errorhandler(404)
+        def handle_not_found(e):
+            return jsonify({"error": "Resource not found"}), 404
     
+    # Local dev DB init only
     if config_name == "development":
         with app.app_context():
             db.create_all()
