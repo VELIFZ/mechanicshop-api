@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
 from application.extensions import ma, limiter, cache
@@ -63,20 +63,20 @@ def create_app(config_name="None"):
     
     # Error handlers for production
     
-    # Register error handlers
-    @app.errorhandler(BadRequest)
-    def handle_bad_request(e):
-        return error_response("Invalid or malformed JSON", 400)
+    # # Register error handlers
+    # @app.errorhandler(BadRequest)
+    # def handle_bad_request(e):
+    #     return error_response("Invalid or malformed JSON", 400)
 
-    if config_name == "production":
-        @app.errorhandler(Exception)
-        def handle_error(e):
-            app.logger.exception("Unhandled exception")
-            return jsonify({"error": "Internal server error"}), 500
+    # if config_name == "production":
+    #     @app.errorhandler(Exception)
+    #     def handle_error(e):
+    #         app.logger.exception("Unhandled exception")
+    #         return jsonify({"error": "Internal server error"}), 500
 
-        @app.errorhandler(404)
-        def handle_not_found(e):
-            return jsonify({"error": "Resource not found"}), 404
+    #     @app.errorhandler(404)
+    #     def handle_not_found(e):
+    #         return jsonify({"error": "Resource not found"}), 404
     
     # Local dev DB init only
     if config_name == "development":
