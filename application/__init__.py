@@ -22,9 +22,7 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
     config={
-        'app_name': "Mechanic Shop API",
-        'validatorUrl': None,  #disabling validator to prevent external validation calls by swagger ui - good for privacy
-        'presets': ['swagger-ui-standalone-preset']
+        'app_name': "Mechanic Shop API"
     }
 )
 
@@ -54,11 +52,6 @@ def create_app(config_name="None"):
     limiter.init_app(app)
     cache.init_app(app)
     migrate = Migrate(app, db)
-    
-    # Serve swagger.yaml
-    @app.route('/static/swagger.yaml')
-    def send_swagger():
-        return send_from_directory('static', 'swagger.yaml')
     
     # Register blueprints
     app.register_blueprint(customer_bp, url_prefix='/customers')
