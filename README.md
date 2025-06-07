@@ -14,6 +14,8 @@ A basic service ticket system for auto mechanic shop with customers, mechanics, 
 -  Password hashing for employees
 -  Field validations and error handling
 -  Rate limiting and caching
+-  CI/CD pipeline with GitHub Actions
+-  Production deployment on Render
 
 
 ## Tech Stack
@@ -22,14 +24,17 @@ A basic service ticket system for auto mechanic shop with customers, mechanics, 
 - Flask
 - SQLAlchemy (ORM)
 - Marshmallow (Serialization)
-- SQLite (default for testing)
+- PostgreSQL (Production) / SQLite (Development)
 - Flask-Migrate (Database migrations)
 - Flask-CORS (Cross-origin support)
 - Flask-Swagger (API documentation)
 - Flask-Limiter (Rate limiting)
 - Flask-Caching (Response caching)
+- Gunicorn (WSGI server for production)
 
 ## Setup
+
+### Local Development
 
 ```bash
 git clone https://github.com/VELIFZ/mechanicshop-api.git
@@ -48,16 +53,44 @@ flask db upgrade
 python app.py
 ```
 
+### Production Deployment
+
+The application is deployed on Render with automatic deployments via GitHub Actions.
+
+**Live API:** https://mechanic-shop-api-ahv0.onrender.com
+
+**API Documentation:** https://mechanic-shop-api-ahv0.onrender.com/api/docs
+
 ## Environment Variables
 
 The application uses environment variables for configuration. Create a `.env` file with the following variables:
 
+### Development
 - `SECRET_KEY`: Used for token generation and security
-- `DEV_DATABASE_URI`: Database URI for development
-- `TEST_DATABASE_URI`: Database URI for testing
-- `DATABASE_URI`: Database URI for production
+- `DEV_DATABASE_URI`: Database URI for development (default: sqlite:///app.db)
+- `TEST_DATABASE_URI`: Database URI for testing (default: sqlite:///test.db)
+- `FLASK_ENV`: Set to "development" for local development
 
-For production deployment, make sure to set secure values for all environment variables.
+### Production
+- `SECRET_KEY`: Secure secret key for production
+- `DATABASE_URI`: PostgreSQL database URI for production
+- `FLASK_ENV`: Set to "production"
+
+For production deployment, make sure to set secure values for all environment variables in your hosting platform.
+
+## CI/CD Pipeline
+
+The project includes a GitHub Actions workflow (`.github/workflows/main.yaml`) that:
+
+1. **Build**: Sets up Python environment and installs dependencies
+2. **Test**: Runs the test suite to ensure code quality
+3. **Deploy**: Automatically deploys to Render when tests pass
+
+### Required GitHub Secrets
+
+For the CI/CD pipeline to work, set these secrets in your GitHub repository:
+- `SERVICE_ID`: Your Render service ID
+- `RENDER_API_KEY`: Your Render API key
 
 ## Testing
 
@@ -78,14 +111,17 @@ python -m unittest tests/test_service.py
 ## API Reference
 
 ### Base URL
-When running locally: `http://localhost:5000/api/v1`
+- **Development:** `http://localhost:5001`
+- **Production:** `https://mechanic-shop-api-ahv0.onrender.com`
 
 ### API Documentation
-Interactive API documentation is available at: `http://127.0.0.1:5000/api/docs/`
+Interactive API documentation is available at:
+- **Development:** `http://localhost:5001/api/docs`
+- **Production:** `https://mechanic-shop-api-ahv0.onrender.com/api/docs`
 
 ### Authentication
 Most endpoints require authentication via JWT token:
-1. Login via `/api/v1/auth/login` to receive a token
+1. Login via `/customers/login` or `/employees/login` to receive a token
 2. Include the token in subsequent requests:
    ```
    Authorization: Bearer <your_token>
@@ -93,43 +129,45 @@ Most endpoints require authentication via JWT token:
 
 ### Endpoints
 
-#### Authentication
-- `POST /api/v1/auth/login` - Login and get access token
-- `POST /api/v1/auth/refresh` - Refresh access token
+#### Customer Authentication
+- `POST /customers/login` - Customer login and get access token
+- `POST /customers` - Register new customer
+
+#### Employee Authentication  
+- `POST /employees/login` - Employee login and get access token
 
 #### Employees
-- `GET /api/v1/employees` - List all employees
-- `GET /api/v1/employees/<id>` - Get employee details
-- `POST /api/v1/employees` - Create new employee
-- `PUT /api/v1/employees/<id>` - Update employee
-- `DELETE /api/v1/employees/<id>` - Delete employee
+- `GET /employees` - List all employees
+- `GET /employees/<id>` - Get employee details
+- `POST /employees` - Create new employee
+- `PUT /employees/<id>` - Update employee
+- `DELETE /employees/<id>` - Delete employee
 
 #### Customers
-- `GET /api/v1/customers` - List all customers
-- `GET /api/v1/customers/<id>` - Get customer details
-- `POST /api/v1/customers` - Create new customer
-- `PUT /api/v1/customers/<id>` - Update customer
-- `DELETE /api/v1/customers/<id>` - Delete customer
+- `GET /customers/me` - Get current customer profile
+- `GET /customers/me/tickets` - Get current customer's tickets
+- `GET /employees/customers` - List all customers (employee access)
+- `GET /employees/customers/<id>` - Get customer details (employee access)
 
 #### Services
-- `GET /api/v1/services` - List all services
-- `GET /api/v1/services/<id>` - Get service details
-- `POST /api/v1/services` - Create new service
-- `PUT /api/v1/services/<id>` - Update service
-- `DELETE /api/v1/services/<id>` - Delete service
+- `GET /services` - List all services
+- `GET /services/<id>` - Get service details
+- `POST /services` - Create new service
+- `PUT /services/<id>` - Update service
+- `DELETE /services/<id>` - Delete service
 
 #### Inventory
-- `GET /api/v1/inventory` - List all inventory items
-- `GET /api/v1/inventory/<id>` - Get inventory item details
-- `POST /api/v1/inventory` - Create new inventory item
-- `PUT /api/v1/inventory/<id>` - Update inventory item
-- `DELETE /api/v1/inventory/<id>` - Delete inventory item
+- `GET /inventory` - List all inventory items
+- `GET /inventory/<id>` - Get inventory item details
+- `POST /inventory` - Create new inventory item
+- `PUT /inventory/<id>` - Update inventory item
+- `DELETE /inventory/<id>` - Delete inventory item
 
 #### Service Tickets
-- `GET /api/v1/tickets` - List all service tickets
-- `GET /api/v1/tickets/<id>` - Get ticket details
-- `POST /api/v1/tickets` - Create new ticket
-- `PUT /api/v1/tickets/<id>` - Update ticket
-- `DELETE /api/v1/tickets/<id>` - Soft delete ticket
+- `GET /service-tickets` - List all service tickets
+- `GET /service-tickets/<id>` - Get ticket details
+- `POST /service-tickets` - Create new ticket
+- `PUT /service-tickets/<id>` - Update ticket
+- `DELETE /service-tickets/<id>` - Soft delete ticket
 
-For detailed request/response formats, see the API documentation comments in the route handler files.
+For detailed request/response formats, see the interactive API documentation.
