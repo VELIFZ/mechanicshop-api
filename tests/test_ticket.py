@@ -207,7 +207,10 @@ class TestServiceTicket(unittest.TestCase):
             db.session.query(ServiceTicket).delete()
             db.session.commit()
             # Clear cache to ensure fresh data
-            cache.clear()
+            try:
+                cache.clear()
+            except Exception:
+                pass  # Cache might not be available in test environment
             
         response = self.client.get("/service-tickets/", headers=self.headers)
         self.assertEqual(response.status_code, 200)
