@@ -63,7 +63,7 @@ class TestServiceTicket(unittest.TestCase):
             vin="1234567890",
             work_summary="Test Description",
             cost=10.0,
-            status="closed",
+            status="open",
             customer_id=self.customer.id
         )   
         db.session.add(self.ticket)
@@ -203,8 +203,11 @@ class TestServiceTicket(unittest.TestCase):
     def test_get_all_tickets_empty(self):
         # Delete all tickets first
         with self.app.app_context():
+            from application.extensions import cache
             db.session.query(ServiceTicket).delete()
             db.session.commit()
+            # Clear cache to ensure fresh data
+            cache.clear()
             
         response = self.client.get("/service-tickets/", headers=self.headers)
         self.assertEqual(response.status_code, 200)

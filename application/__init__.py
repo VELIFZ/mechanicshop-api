@@ -1,7 +1,8 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask
 from flask_cors import CORS
 from flask_migrate import Migrate
+from flask_compress import Compress
 from application.extensions import ma, limiter, cache
 from application.models import db
 from application.blueprints.customer import customer_bp
@@ -10,8 +11,6 @@ from application.blueprints.service_ticket import service_ticket_bp
 from application.blueprints.inventory import inventory_bp
 from application.blueprints.service_ import service_bp
 from flask_swagger_ui import get_swaggerui_blueprint
-from werkzeug.exceptions import BadRequest
-from application.utils.utils import error_response
 
 SWAGGER_URL = '/api/docs'  # set the endpoint for documentation
 
@@ -32,6 +31,9 @@ def create_app(config_name="None"):
     
     app = Flask(__name__, static_folder='static')
     
+    # Enable compression for static files
+    Compress(app)
+    
     # Configure CORS
     CORS(app, resources={r"/*": {"origins": "*"}})
     
@@ -49,7 +51,11 @@ def create_app(config_name="None"):
     # add extensions to app
     db.init_app(app)
     ma.init_app(app)
-    limiter.init_app(app)
+    
+    # Only initialize rate limiter if enabled (disabled for testing)
+    if app.config.get('RATELIMIT_ENABLED', True):
+        limiter.init_app(app)
+    
     cache.init_app(app)
     migrate = Migrate(app, db)
     
@@ -60,23 +66,6 @@ def create_app(config_name="None"):
     app.register_blueprint(inventory_bp, url_prefix='/inventory')
     app.register_blueprint(service_bp, url_prefix='/services')
     app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL) 
-    
-    # Error handlers for production
-    
-    # # Register error handlers
-    # @app.errorhandler(BadRequest)
-    # def handle_bad_request(e):
-    #     return error_response("Invalid or malformed JSON", 400)
-
-    # if config_name == "production":
-    #     @app.errorhandler(Exception)
-    #     def handle_error(e):
-    #         app.logger.exception("Unhandled exception")
-    #         return jsonify({"error": "Internal server error"}), 500
-
-    #     @app.errorhandler(404)
-    #     def handle_not_found(e):
-    #         return jsonify({"error": "Resource not found"}), 404
     
     # Local dev DB init only
     if config_name == "development":

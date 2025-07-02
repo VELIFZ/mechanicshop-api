@@ -1,0 +1,99 @@
+services:
+  # Main Flask application
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FLASK_ENV: production
+    ports:
+      - "5002:5000"  # External port 5002, internal port 5000
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URI=postgresql://mechanic_user:mechanic_password@db:5432/mechanic_shop
+      - SECRET_KEY=your-production-secret-key-here
+      - REDIS_URL=redis://redis:6379
+      - COMPRESS_MIMETYPES=text/html,text/css,text/xml,text/javascript,text/plain,application/json,application/yaml
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # PostgreSQL database for production
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=mechanic_shop
+      - POSTGRES_USER=mechanic_user
+      - POSTGRES_PASSWORD=mechanic_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: Add init scripts
+      # - ./db_init:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"  # External port 5433, internal port 5432
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mechanic_user -d mechanic_shop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis for rate limiting and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Development version 
+  web-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FLASK_ENV: development
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_ENV=development
+      - DEV_DATABASE_URI=sqlite:///app.db
+      - SECRET_KEY=dev-secret-key
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      # Mount source code for hot reloading in development
+      - .:/app
+    command: python app.py
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge 

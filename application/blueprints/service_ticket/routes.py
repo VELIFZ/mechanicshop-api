@@ -222,6 +222,10 @@ def soft_delete_service_ticket(user_id, id):
     try:
         ticket.is_deleted = True
         db.session.commit()
+        
+        # Clear cache for service tickets list
+        cache.clear()
+        
         return success_response(message="Service ticket soft-deleted")
     except Exception as err:
         db.session.rollback()

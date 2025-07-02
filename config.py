@@ -23,6 +23,7 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = True
     JWT_TOKEN_EXPIRY = 300  # 5 minutes 
+    RATELIMIT_ENABLED = False  # Disable rate limiting for tests 
 
 class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URI') or 'sqlite:///test.db'

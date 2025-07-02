@@ -121,6 +121,10 @@ def delete_inventory(user_id, inventory_id):
 
         inventory.is_deleted = True
         db.session.commit()
+        
+        # Clear cache to ensure fresh data on next request
+        cache.clear()
+        
         return success_response(message="Inventory deleted (soft)")
     
     except Exception as e:
@@ -239,6 +243,9 @@ def delete_serialized_part(user_id, part_id):
         
         part.is_deleted = True
         db.session.commit()
+        
+        # Clear cache to ensure fresh data on next request
+        cache.clear()
         
         return success_response(message="Serialized part deleted successfully")
     except Exception as e:
