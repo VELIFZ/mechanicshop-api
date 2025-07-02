@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_migrate import Migrate
 from flask_compress import Compress
-from application.extensions import ma, limiter, cache
+from application.extensions import ma, limiter, init_cache
 from application.models import db
 from application.blueprints.customer import customer_bp
 from application.blueprints.employee import employee_bp
@@ -56,7 +56,8 @@ def create_app(config_name="None"):
     if app.config.get('RATELIMIT_ENABLED', True):
         limiter.init_app(app)
     
-    cache.init_app(app)
+    # Initialize cache with proper configuration
+    init_cache(app)
     migrate = Migrate(app, db)
     
     # Register blueprints

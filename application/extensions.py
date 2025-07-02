@@ -18,12 +18,22 @@ limiter = Limiter(
     swallow_errors=True  # Graceful fallback if Redis is unavailable
 )
                   
-cache = Cache(config={
-    'CACHE_TYPE': 'RedisCache',
-    'CACHE_REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379'),
-    'CACHE_DEFAULT_TIMEOUT': 300,  # 5 minutes default
-    'CACHE_THRESHOLD': 500  # Maximum number of items to store in the cache
-})
+# Initialize cache without config - will be configured in init_cache
+cache = Cache()
+
+def init_cache(app):
+    """Configure cache based on app configuration"""
+    cache_config = {
+        'CACHE_TYPE': app.config.get('CACHE_TYPE', 'SimpleCache'),
+        'CACHE_DEFAULT_TIMEOUT': app.config.get('CACHE_DEFAULT_TIMEOUT', 300)
+    }
+    
+    # Add Redis URL if using RedisCache
+    if cache_config['CACHE_TYPE'] == 'RedisCache':
+        cache_config['CACHE_REDIS_URL'] = app.config.get('CACHE_REDIS_URL', 'redis://localhost:6379')
+    
+    app.config.update(cache_config)
+    cache.init_app(app)
 
 
 
